@@ -6,20 +6,23 @@ import (
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/codec"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
-	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
+	"github.com/cosmos/cosmos-sdk/simapp/helpers"
+	simappparams "github.com/cosmos/cosmos-sdk/simapp/params"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
-	"github.com/cosmos/cosmos-sdk/x/auth/tx"
-	"github.com/cosmos/cosmos-sdk/x/simulation"
+	"github.com/cosmos/cosmos-sdk/x/nft"
 
-	"cosmossdk.io/x/nft"
-	"cosmossdk.io/x/nft/keeper"
+	"github.com/cosmos/cosmos-sdk/x/nft/keeper"
+
+	"github.com/cosmos/cosmos-sdk/x/simulation"
 )
 
 const (
 	// OpWeightMsgSend Simulation operation weights constants
 	OpWeightMsgSend = "op_weight_msg_send" //nolint:gosec
+)
 
+const (
 	// WeightSend nft operations weights
 	WeightSend = 100
 )
@@ -92,13 +95,13 @@ func SimulateMsgSend(
 			Receiver: receiver.Address.String(),
 		}
 
-		txCfg := tx.NewTxConfig(cdc, tx.DefaultSignModes)
-		tx, err := simtestutil.GenSignedMockTx(
+		txCfg := simappparams.MakeTestEncodingConfig().TxConfig
+		tx, err := helpers.GenSignedMockTx(
 			r,
 			txCfg,
 			[]sdk.Msg{msg},
 			fees,
-			simtestutil.DefaultGenTxGas,
+			helpers.DefaultGenTxGas,
 			chainID,
 			[]uint64{senderAcc.GetAccountNumber()},
 			[]uint64{senderAcc.GetSequence()},
@@ -108,15 +111,15 @@ func SimulateMsgSend(
 			return simtypes.NoOpMsg(nft.ModuleName, TypeMsgSend, "unable to generate mock tx"), nil, err
 		}
 
-		if _, _, err = app.SimDeliver(txCfg.TxEncoder(), tx); err != nil {
+		_, _, err = app.SimDeliver(txCfg.TxEncoder(), tx)
+		if err != nil {
 			return simtypes.NoOpMsg(nft.ModuleName, sdk.MsgTypeURL(msg), "unable to deliver tx"), nil, err
 		}
 
-		return simtypes.NewOperationMsg(msg, true, "", cdc), nil, nil
+		return simtypes.NewOperationMsg(msg, true, "", cdc), nil, err
 	}
 }
 
-// randNFT picks a random NFT from a class belonging to the specified owner(minter).
 func randNFT(ctx sdk.Context, r *rand.Rand, k keeper.Keeper, minter sdk.AccAddress) (nft.NFT, error) {
 	c, err := randClass(ctx, r, k)
 	if err != nil {
@@ -139,7 +142,6 @@ func randNFT(ctx sdk.Context, r *rand.Rand, k keeper.Keeper, minter sdk.AccAddre
 	return n, nil
 }
 
-// randClass picks a random Class.
 func randClass(ctx sdk.Context, r *rand.Rand, k keeper.Keeper) (nft.Class, error) {
 	classes := k.GetClasses(ctx)
 	if len(classes) == 0 {

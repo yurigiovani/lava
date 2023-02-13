@@ -2,12 +2,6 @@ package ante_test
 
 import (
 	"fmt"
-	"testing"
-
-	"github.com/golang/mock/gomock"
-	"github.com/stretchr/testify/require"
-
-	storetypes "cosmossdk.io/store/types"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -17,25 +11,24 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256r1"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	"github.com/cosmos/cosmos-sdk/crypto/types/multisig"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	"github.com/cosmos/cosmos-sdk/x/auth/ante"
 	"github.com/cosmos/cosmos-sdk/x/auth/migrations/legacytx"
-	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
-	txmodule "github.com/cosmos/cosmos-sdk/x/auth/tx/config"
 	"github.com/cosmos/cosmos-sdk/x/auth/types"
-	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 )
 
-func TestSetPubKey(t *testing.T) {
-	suite := SetupTestSuite(t, true)
+func (suite *AnteTestSuite) TestSetPubKey() {
+	suite.SetupTest(true) // setup
+	require := suite.Require()
 	suite.txBuilder = suite.clientCtx.TxConfig.NewTxBuilder()
 
 	// keys and addresses
 	priv1, pub1, addr1 := testdata.KeyTestPubAddr()
 	priv2, pub2, addr2 := testdata.KeyTestPubAddr()
-	priv3, pub3, addr3 := testdata.KeyTestPubAddrSecp256R1(t)
+	priv3, pub3, addr3 := testdata.KeyTestPubAddrSecp256R1(require)
 
 	addrs := []sdk.AccAddress{addr1, addr2, addr3}
 	pubs := []cryptotypes.PubKey{pub1, pub2, pub3}
@@ -43,38 +36,38 @@ func TestSetPubKey(t *testing.T) {
 	msgs := make([]sdk.Msg, len(addrs))
 	// set accounts and create msg for each address
 	for i, addr := range addrs {
-		acc := suite.accountKeeper.NewAccountWithAddress(suite.ctx, addr)
-		require.NoError(t, acc.SetAccountNumber(uint64(i)))
-		suite.accountKeeper.SetAccount(suite.ctx, acc)
+		acc := suite.app.AccountKeeper.NewAccountWithAddress(suite.ctx, addr)
+		require.NoError(acc.SetAccountNumber(uint64(i)))
+		suite.app.AccountKeeper.SetAccount(suite.ctx, acc)
 		msgs[i] = testdata.NewTestMsg(addr)
 	}
-	require.NoError(t, suite.txBuilder.SetMsgs(msgs...))
+	require.NoError(suite.txBuilder.SetMsgs(msgs...))
 	suite.txBuilder.SetFeeAmount(testdata.NewTestFeeAmount())
 	suite.txBuilder.SetGasLimit(testdata.NewTestGasLimit())
 
 	privs, accNums, accSeqs := []cryptotypes.PrivKey{priv1, priv2, priv3}, []uint64{0, 1, 2}, []uint64{0, 0, 0}
-	tx, err := suite.CreateTestTx(suite.ctx, privs, accNums, accSeqs, suite.ctx.ChainID(), signing.SignMode_SIGN_MODE_DIRECT)
-	require.NoError(t, err)
+	tx, err := suite.CreateTestTx(privs, accNums, accSeqs, suite.ctx.ChainID())
+	require.NoError(err)
 
-	spkd := ante.NewSetPubKeyDecorator(suite.accountKeeper)
+	spkd := ante.NewSetPubKeyDecorator(suite.app.AccountKeeper)
 	antehandler := sdk.ChainAnteDecorators(spkd)
 
 	ctx, err := antehandler(suite.ctx, tx, false)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	// Require that all accounts have pubkey set after Decorator runs
 	for i, addr := range addrs {
-		pk, err := suite.accountKeeper.GetPubKey(ctx, addr)
-		require.NoError(t, err, "Error on retrieving pubkey from account")
-		require.True(t, pubs[i].Equals(pk),
+		pk, err := suite.app.AccountKeeper.GetPubKey(ctx, addr)
+		require.NoError(err, "Error on retrieving pubkey from account")
+		require.True(pubs[i].Equals(pk),
 			"Wrong Pubkey retrieved from AccountKeeper, idx=%d\nexpected=%s\n     got=%s", i, pubs[i], pk)
 	}
 }
 
-func TestConsumeSignatureVerificationGas(t *testing.T) {
-	suite := SetupTestSuite(t, true)
+func (suite *AnteTestSuite) TestConsumeSignatureVerificationGas() {
 	params := types.DefaultParams()
 	msg := []byte{1, 2, 3, 4}
+	cdc := simapp.MakeTestEncodingConfig().Amino
 
 	p := types.DefaultParams()
 	skR1, _ := secp256r1.GenPrivKey()
@@ -83,15 +76,15 @@ func TestConsumeSignatureVerificationGas(t *testing.T) {
 	multisignature1 := multisig.NewMultisig(len(pkSet1))
 	expectedCost1 := expectedGasCostByKeys(pkSet1)
 	for i := 0; i < len(pkSet1); i++ {
-		stdSig := legacytx.StdSignature{PubKey: pkSet1[i], Signature: sigSet1[i]} //nolint:staticcheck // SA1019: legacytx.StdSignature is deprecated
-		sigV2, err := legacytx.StdSignatureToSignatureV2(suite.clientCtx.LegacyAmino, stdSig)
-		require.NoError(t, err)
+		stdSig := legacytx.StdSignature{PubKey: pkSet1[i], Signature: sigSet1[i]}
+		sigV2, err := legacytx.StdSignatureToSignatureV2(cdc, stdSig)
+		suite.Require().NoError(err)
 		err = multisig.AddSignatureV2(multisignature1, sigV2, pkSet1)
-		require.NoError(t, err)
+		suite.Require().NoError(err)
 	}
 
 	type args struct {
-		meter  storetypes.GasMeter
+		meter  sdk.GasMeter
 		sig    signing.SignatureData
 		pubkey cryptotypes.PubKey
 		params types.Params
@@ -102,11 +95,11 @@ func TestConsumeSignatureVerificationGas(t *testing.T) {
 		gasConsumed uint64
 		shouldErr   bool
 	}{
-		{"PubKeyEd25519", args{storetypes.NewInfiniteGasMeter(), nil, ed25519.GenPrivKey().PubKey(), params}, p.SigVerifyCostED25519, true},
-		{"PubKeySecp256k1", args{storetypes.NewInfiniteGasMeter(), nil, secp256k1.GenPrivKey().PubKey(), params}, p.SigVerifyCostSecp256k1, false},
-		{"PubKeySecp256r1", args{storetypes.NewInfiniteGasMeter(), nil, skR1.PubKey(), params}, p.SigVerifyCostSecp256r1(), false},
-		{"Multisig", args{storetypes.NewInfiniteGasMeter(), multisignature1, multisigKey1, params}, expectedCost1, false},
-		{"unknown key", args{storetypes.NewInfiniteGasMeter(), nil, nil, params}, 0, true},
+		{"PubKeyEd25519", args{sdk.NewInfiniteGasMeter(), nil, ed25519.GenPrivKey().PubKey(), params}, p.SigVerifyCostED25519, true},
+		{"PubKeySecp256k1", args{sdk.NewInfiniteGasMeter(), nil, secp256k1.GenPrivKey().PubKey(), params}, p.SigVerifyCostSecp256k1, false},
+		{"PubKeySecp256r1", args{sdk.NewInfiniteGasMeter(), nil, skR1.PubKey(), params}, p.SigVerifyCostSecp256r1(), false},
+		{"Multisig", args{sdk.NewInfiniteGasMeter(), multisignature1, multisigKey1, params}, expectedCost1, false},
+		{"unknown key", args{sdk.NewInfiniteGasMeter(), nil, nil, params}, 0, true},
 	}
 	for _, tt := range tests {
 		sigV2 := signing.SignatureV2{
@@ -117,26 +110,16 @@ func TestConsumeSignatureVerificationGas(t *testing.T) {
 		err := ante.DefaultSigVerificationGasConsumer(tt.args.meter, sigV2, tt.args.params)
 
 		if tt.shouldErr {
-			require.NotNil(t, err)
+			suite.Require().NotNil(err)
 		} else {
-			require.Nil(t, err)
-			require.Equal(t, tt.gasConsumed, tt.args.meter.GasConsumed(), fmt.Sprintf("%d != %d", tt.gasConsumed, tt.args.meter.GasConsumed()))
+			suite.Require().Nil(err)
+			suite.Require().Equal(tt.gasConsumed, tt.args.meter.GasConsumed(), fmt.Sprintf("%d != %d", tt.gasConsumed, tt.args.meter.GasConsumed()))
 		}
 	}
 }
 
-func TestSigVerification(t *testing.T) {
-	suite := SetupTestSuite(t, true)
-	suite.txBankKeeper.EXPECT().DenomMetadata(suite.ctx, gomock.Any()).Return(&banktypes.QueryDenomMetadataResponse{}, nil).AnyTimes()
-
-	enabledSignModes := []signing.SignMode{signing.SignMode_SIGN_MODE_DIRECT, signing.SignMode_SIGN_MODE_TEXTUAL, signing.SignMode_SIGN_MODE_LEGACY_AMINO_JSON}
-	// Since TEXTUAL is not enabled by default, we create a custom TxConfig
-	// here which includes it.
-	suite.clientCtx.TxConfig = authtx.NewTxConfigWithTextual(
-		codec.NewProtoCodec(suite.encCfg.InterfaceRegistry),
-		enabledSignModes,
-		txmodule.NewTextualWithGRPCConn(suite.clientCtx),
-	)
+func (suite *AnteTestSuite) TestSigVerification() {
+	suite.SetupTest(true) // setup
 	suite.txBuilder = suite.clientCtx.TxConfig.NewTxBuilder()
 
 	// make block height non-zero to ensure account numbers part of signBytes
@@ -152,22 +135,17 @@ func TestSigVerification(t *testing.T) {
 	msgs := make([]sdk.Msg, len(addrs))
 	// set accounts and create msg for each address
 	for i, addr := range addrs {
-		acc := suite.accountKeeper.NewAccountWithAddress(suite.ctx, addr)
-		require.NoError(t, acc.SetAccountNumber(uint64(i)))
-		suite.accountKeeper.SetAccount(suite.ctx, acc)
+		acc := suite.app.AccountKeeper.NewAccountWithAddress(suite.ctx, addr)
+		suite.Require().NoError(acc.SetAccountNumber(uint64(i)))
+		suite.app.AccountKeeper.SetAccount(suite.ctx, acc)
 		msgs[i] = testdata.NewTestMsg(addr)
 	}
 
 	feeAmount := testdata.NewTestFeeAmount()
 	gasLimit := testdata.NewTestGasLimit()
 
-	spkd := ante.NewSetPubKeyDecorator(suite.accountKeeper)
-	anteTxConfig := authtx.NewTxConfigWithTextual(
-		codec.NewProtoCodec(suite.encCfg.InterfaceRegistry),
-		enabledSignModes,
-		txmodule.NewTextualWithBankKeeper(suite.txBankKeeper),
-	)
-	svd := ante.NewSigVerificationDecorator(suite.accountKeeper, anteTxConfig.SignModeHandler())
+	spkd := ante.NewSetPubKeyDecorator(suite.app.AccountKeeper)
+	svd := ante.NewSigVerificationDecorator(suite.app.AccountKeeper, suite.clientCtx.TxConfig.SignModeHandler())
 	antehandler := sdk.ChainAnteDecorators(spkd, svd)
 
 	type testCase struct {
@@ -175,7 +153,7 @@ func TestSigVerification(t *testing.T) {
 		privs       []cryptotypes.PrivKey
 		accNums     []uint64
 		accSeqs     []uint64
-		invalidSigs bool // used for testing sigverify on RecheckTx
+		invalidSigs bool
 		recheck     bool
 		shouldErr   bool
 	}
@@ -189,41 +167,36 @@ func TestSigVerification(t *testing.T) {
 		{"valid tx", []cryptotypes.PrivKey{priv1, priv2, priv3}, []uint64{0, 1, 2}, []uint64{0, 0, 0}, validSigs, false, false},
 		{"no err on recheck", []cryptotypes.PrivKey{priv1, priv2, priv3}, []uint64{0, 0, 0}, []uint64{0, 0, 0}, !validSigs, true, false},
 	}
-
 	for i, tc := range testCases {
-		for _, signMode := range enabledSignModes {
-			t.Run(fmt.Sprintf("%s with %s", tc.name, signMode), func(t *testing.T) {
-				suite.ctx = suite.ctx.WithIsReCheckTx(tc.recheck)
-				suite.txBuilder = suite.clientCtx.TxConfig.NewTxBuilder() // Create new txBuilder for each test
+		suite.ctx = suite.ctx.WithIsReCheckTx(tc.recheck)
+		suite.txBuilder = suite.clientCtx.TxConfig.NewTxBuilder() // Create new txBuilder for each test
 
-				require.NoError(t, suite.txBuilder.SetMsgs(msgs...))
-				suite.txBuilder.SetFeeAmount(feeAmount)
-				suite.txBuilder.SetGasLimit(gasLimit)
+		suite.Require().NoError(suite.txBuilder.SetMsgs(msgs...))
+		suite.txBuilder.SetFeeAmount(feeAmount)
+		suite.txBuilder.SetGasLimit(gasLimit)
 
-				tx, err := suite.CreateTestTx(suite.ctx, tc.privs, tc.accNums, tc.accSeqs, suite.ctx.ChainID(), signMode)
-				require.NoError(t, err)
-				if tc.invalidSigs {
-					txSigs, _ := tx.GetSignaturesV2()
-					badSig, _ := tc.privs[0].Sign([]byte("unrelated message"))
-					txSigs[0] = signing.SignatureV2{
-						PubKey: tc.privs[0].PubKey(),
-						Data: &signing.SingleSignatureData{
-							SignMode:  suite.clientCtx.TxConfig.SignModeHandler().DefaultMode(),
-							Signature: badSig,
-						},
-						Sequence: tc.accSeqs[0],
-					}
-					suite.txBuilder.SetSignatures(txSigs...)
-					tx = suite.txBuilder.GetTx()
-				}
+		tx, err := suite.CreateTestTx(tc.privs, tc.accNums, tc.accSeqs, suite.ctx.ChainID())
+		suite.Require().NoError(err)
+		if tc.invalidSigs {
+			txSigs, _ := tx.GetSignaturesV2()
+			badSig, _ := tc.privs[0].Sign([]byte("unrelated message"))
+			txSigs[0] = signing.SignatureV2{
+				PubKey: tc.privs[0].PubKey(),
+				Data: &signing.SingleSignatureData{
+					SignMode:  suite.clientCtx.TxConfig.SignModeHandler().DefaultMode(),
+					Signature: badSig,
+				},
+				Sequence: tc.accSeqs[0],
+			}
+			suite.txBuilder.SetSignatures(txSigs...)
+			tx = suite.txBuilder.GetTx()
+		}
 
-				_, err = antehandler(suite.ctx, tx, false)
-				if tc.shouldErr {
-					require.NotNil(t, err, "TestCase %d: %s did not error as expected", i, tc.name)
-				} else {
-					require.Nil(t, err, "TestCase %d: %s errored unexpectedly. Err: %v", i, tc.name, err)
-				}
-			})
+		_, err = antehandler(suite.ctx, tx, false)
+		if tc.shouldErr {
+			suite.Require().NotNil(err, "TestCase %d: %s did not error as expected", i, tc.name)
+		} else {
+			suite.Require().Nil(err, "TestCase %d: %s errored unexpectedly. Err: %v", i, tc.name, err)
 		}
 	}
 }
@@ -234,8 +207,10 @@ func TestSigVerification(t *testing.T) {
 // this, since it'll be handled by the test matrix.
 // In the meantime, we want to make double-sure amino compatibility works.
 // ref: https://github.com/cosmos/cosmos-sdk/issues/7229
-func TestSigVerification_ExplicitAmino(t *testing.T) {
-	suite := SetupTestSuite(t, true)
+func (suite *AnteTestSuite) TestSigVerification_ExplicitAmino() {
+	suite.app, suite.ctx = createTestApp(suite.T(), true)
+	suite.ctx = suite.ctx.WithBlockHeight(1)
+
 	// Set up TxConfig.
 	aminoCdc := codec.NewLegacyAmino()
 	// We're using TestMsg amino encoding in some tests, so register it here.
@@ -246,15 +221,15 @@ func TestSigVerification_ExplicitAmino(t *testing.T) {
 
 	anteHandler, err := ante.NewAnteHandler(
 		ante.HandlerOptions{
-			AccountKeeper:   suite.accountKeeper,
-			BankKeeper:      suite.bankKeeper,
-			FeegrantKeeper:  suite.feeGrantKeeper,
+			AccountKeeper:   suite.app.AccountKeeper,
+			BankKeeper:      suite.app.BankKeeper,
+			FeegrantKeeper:  suite.app.FeeGrantKeeper,
 			SignModeHandler: txConfig.SignModeHandler(),
 			SigGasConsumer:  ante.DefaultSigVerificationGasConsumer,
 		},
 	)
 
-	require.NoError(t, err)
+	suite.Require().NoError(err)
 	suite.anteHandler = anteHandler
 
 	suite.txBuilder = suite.clientCtx.TxConfig.NewTxBuilder()
@@ -272,17 +247,17 @@ func TestSigVerification_ExplicitAmino(t *testing.T) {
 	msgs := make([]sdk.Msg, len(addrs))
 	// set accounts and create msg for each address
 	for i, addr := range addrs {
-		acc := suite.accountKeeper.NewAccountWithAddress(suite.ctx, addr)
-		require.NoError(t, acc.SetAccountNumber(uint64(i)))
-		suite.accountKeeper.SetAccount(suite.ctx, acc)
+		acc := suite.app.AccountKeeper.NewAccountWithAddress(suite.ctx, addr)
+		suite.Require().NoError(acc.SetAccountNumber(uint64(i)))
+		suite.app.AccountKeeper.SetAccount(suite.ctx, acc)
 		msgs[i] = testdata.NewTestMsg(addr)
 	}
 
 	feeAmount := testdata.NewTestFeeAmount()
 	gasLimit := testdata.NewTestGasLimit()
 
-	spkd := ante.NewSetPubKeyDecorator(suite.accountKeeper)
-	svd := ante.NewSigVerificationDecorator(suite.accountKeeper, suite.clientCtx.TxConfig.SignModeHandler())
+	spkd := ante.NewSetPubKeyDecorator(suite.app.AccountKeeper)
+	svd := ante.NewSigVerificationDecorator(suite.app.AccountKeeper, suite.clientCtx.TxConfig.SignModeHandler())
 	antehandler := sdk.ChainAnteDecorators(spkd, svd)
 
 	type testCase struct {
@@ -306,23 +281,23 @@ func TestSigVerification_ExplicitAmino(t *testing.T) {
 		suite.ctx = suite.ctx.WithIsReCheckTx(tc.recheck)
 		suite.txBuilder = suite.clientCtx.TxConfig.NewTxBuilder() // Create new txBuilder for each test
 
-		require.NoError(t, suite.txBuilder.SetMsgs(msgs...))
+		suite.Require().NoError(suite.txBuilder.SetMsgs(msgs...))
 		suite.txBuilder.SetFeeAmount(feeAmount)
 		suite.txBuilder.SetGasLimit(gasLimit)
 
-		tx, err := suite.CreateTestTx(suite.ctx, tc.privs, tc.accNums, tc.accSeqs, suite.ctx.ChainID(), signing.SignMode_SIGN_MODE_LEGACY_AMINO_JSON)
-		require.NoError(t, err)
+		tx, err := suite.CreateTestTx(tc.privs, tc.accNums, tc.accSeqs, suite.ctx.ChainID())
+		suite.Require().NoError(err)
 
 		_, err = antehandler(suite.ctx, tx, false)
 		if tc.shouldErr {
-			require.NotNil(t, err, "TestCase %d: %s did not error as expected", i, tc.name)
+			suite.Require().NotNil(err, "TestCase %d: %s did not error as expected", i, tc.name)
 		} else {
-			require.Nil(t, err, "TestCase %d: %s errored unexpectedly. Err: %v", i, tc.name, err)
+			suite.Require().Nil(err, "TestCase %d: %s errored unexpectedly. Err: %v", i, tc.name, err)
 		}
 	}
 }
 
-func TestSigIntegration(t *testing.T) {
+func (suite *AnteTestSuite) TestSigIntegration() {
 	// generate private keys
 	privs := []cryptotypes.PrivKey{
 		secp256k1.GenPrivKey(),
@@ -332,24 +307,23 @@ func TestSigIntegration(t *testing.T) {
 
 	params := types.DefaultParams()
 	initialSigCost := params.SigVerifyCostSecp256k1
-	initialCost, err := runSigDecorators(t, params, false, privs...)
-	require.Nil(t, err)
+	initialCost, err := suite.runSigDecorators(params, false, privs...)
+	suite.Require().Nil(err)
 
 	params.SigVerifyCostSecp256k1 *= 2
-	doubleCost, err := runSigDecorators(t, params, false, privs...)
-	require.Nil(t, err)
+	doubleCost, err := suite.runSigDecorators(params, false, privs...)
+	suite.Require().Nil(err)
 
-	require.Equal(t, initialSigCost*uint64(len(privs)), doubleCost-initialCost)
+	suite.Require().Equal(initialSigCost*uint64(len(privs)), doubleCost-initialCost)
 }
 
-func runSigDecorators(t *testing.T, params types.Params, _ bool, privs ...cryptotypes.PrivKey) (storetypes.Gas, error) {
-	suite := SetupTestSuite(t, true)
+func (suite *AnteTestSuite) runSigDecorators(params types.Params, _ bool, privs ...cryptotypes.PrivKey) (sdk.Gas, error) {
+	suite.SetupTest(true) // setup
 	suite.txBuilder = suite.clientCtx.TxConfig.NewTxBuilder()
 
 	// Make block-height non-zero to include accNum in SignBytes
 	suite.ctx = suite.ctx.WithBlockHeight(1)
-	err := suite.accountKeeper.SetParams(suite.ctx, params)
-	require.NoError(t, err)
+	suite.app.AccountKeeper.SetParams(suite.ctx, params)
 
 	msgs := make([]sdk.Msg, len(privs))
 	accNums := make([]uint64, len(privs))
@@ -357,26 +331,26 @@ func runSigDecorators(t *testing.T, params types.Params, _ bool, privs ...crypto
 	// set accounts and create msg for each address
 	for i, priv := range privs {
 		addr := sdk.AccAddress(priv.PubKey().Address())
-		acc := suite.accountKeeper.NewAccountWithAddress(suite.ctx, addr)
-		require.NoError(t, acc.SetAccountNumber(uint64(i)))
-		suite.accountKeeper.SetAccount(suite.ctx, acc)
+		acc := suite.app.AccountKeeper.NewAccountWithAddress(suite.ctx, addr)
+		suite.Require().NoError(acc.SetAccountNumber(uint64(i)))
+		suite.app.AccountKeeper.SetAccount(suite.ctx, acc)
 		msgs[i] = testdata.NewTestMsg(addr)
 		accNums[i] = uint64(i)
 		accSeqs[i] = uint64(0)
 	}
-	require.NoError(t, suite.txBuilder.SetMsgs(msgs...))
+	suite.Require().NoError(suite.txBuilder.SetMsgs(msgs...))
 
 	feeAmount := testdata.NewTestFeeAmount()
 	gasLimit := testdata.NewTestGasLimit()
 	suite.txBuilder.SetFeeAmount(feeAmount)
 	suite.txBuilder.SetGasLimit(gasLimit)
 
-	tx, err := suite.CreateTestTx(suite.ctx, privs, accNums, accSeqs, suite.ctx.ChainID(), signing.SignMode_SIGN_MODE_DIRECT)
-	require.NoError(t, err)
+	tx, err := suite.CreateTestTx(privs, accNums, accSeqs, suite.ctx.ChainID())
+	suite.Require().NoError(err)
 
-	spkd := ante.NewSetPubKeyDecorator(suite.accountKeeper)
-	svgc := ante.NewSigGasConsumeDecorator(suite.accountKeeper, ante.DefaultSigVerificationGasConsumer)
-	svd := ante.NewSigVerificationDecorator(suite.accountKeeper, suite.clientCtx.TxConfig.SignModeHandler())
+	spkd := ante.NewSetPubKeyDecorator(suite.app.AccountKeeper)
+	svgc := ante.NewSigGasConsumeDecorator(suite.app.AccountKeeper, ante.DefaultSigVerificationGasConsumer)
+	svd := ante.NewSigVerificationDecorator(suite.app.AccountKeeper, suite.clientCtx.TxConfig.SignModeHandler())
 	antehandler := sdk.ChainAnteDecorators(spkd, svgc, svd)
 
 	// Determine gas consumption of antehandler with default params
@@ -387,29 +361,29 @@ func runSigDecorators(t *testing.T, params types.Params, _ bool, privs ...crypto
 	return after - before, err
 }
 
-func TestIncrementSequenceDecorator(t *testing.T) {
-	suite := SetupTestSuite(t, true)
+func (suite *AnteTestSuite) TestIncrementSequenceDecorator() {
+	suite.SetupTest(true) // setup
 	suite.txBuilder = suite.clientCtx.TxConfig.NewTxBuilder()
 
 	priv, _, addr := testdata.KeyTestPubAddr()
-	acc := suite.accountKeeper.NewAccountWithAddress(suite.ctx, addr)
-	require.NoError(t, acc.SetAccountNumber(uint64(50)))
-	suite.accountKeeper.SetAccount(suite.ctx, acc)
+	acc := suite.app.AccountKeeper.NewAccountWithAddress(suite.ctx, addr)
+	suite.Require().NoError(acc.SetAccountNumber(uint64(50)))
+	suite.app.AccountKeeper.SetAccount(suite.ctx, acc)
 
 	msgs := []sdk.Msg{testdata.NewTestMsg(addr)}
-	require.NoError(t, suite.txBuilder.SetMsgs(msgs...))
+	suite.Require().NoError(suite.txBuilder.SetMsgs(msgs...))
 	privs := []cryptotypes.PrivKey{priv}
-	accNums := []uint64{suite.accountKeeper.GetAccount(suite.ctx, addr).GetAccountNumber()}
-	accSeqs := []uint64{suite.accountKeeper.GetAccount(suite.ctx, addr).GetSequence()}
+	accNums := []uint64{suite.app.AccountKeeper.GetAccount(suite.ctx, addr).GetAccountNumber()}
+	accSeqs := []uint64{suite.app.AccountKeeper.GetAccount(suite.ctx, addr).GetSequence()}
 	feeAmount := testdata.NewTestFeeAmount()
 	gasLimit := testdata.NewTestGasLimit()
 	suite.txBuilder.SetFeeAmount(feeAmount)
 	suite.txBuilder.SetGasLimit(gasLimit)
 
-	tx, err := suite.CreateTestTx(suite.ctx, privs, accNums, accSeqs, suite.ctx.ChainID(), signing.SignMode_SIGN_MODE_DIRECT)
-	require.NoError(t, err)
+	tx, err := suite.CreateTestTx(privs, accNums, accSeqs, suite.ctx.ChainID())
+	suite.Require().NoError(err)
 
-	isd := ante.NewIncrementSequenceDecorator(suite.accountKeeper)
+	isd := ante.NewIncrementSequenceDecorator(suite.app.AccountKeeper)
 	antehandler := sdk.ChainAnteDecorators(isd)
 
 	testCases := []struct {
@@ -426,7 +400,7 @@ func TestIncrementSequenceDecorator(t *testing.T) {
 
 	for i, tc := range testCases {
 		_, err := antehandler(tc.ctx, tx, tc.simulate)
-		require.NoError(t, err, "unexpected error; tc #%d, %v", i, tc)
-		require.Equal(t, tc.expectedSeq, suite.accountKeeper.GetAccount(suite.ctx, addr).GetSequence())
+		suite.Require().NoError(err, "unexpected error; tc #%d, %v", i, tc)
+		suite.Require().Equal(tc.expectedSeq, suite.app.AccountKeeper.GetAccount(suite.ctx, addr).GetSequence())
 	}
 }

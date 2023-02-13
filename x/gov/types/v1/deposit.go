@@ -31,7 +31,6 @@ func (d Deposits) Equal(other Deposits) bool {
 	return true
 }
 
-// String implements stringer interface
 func (d Deposits) String() string {
 	if len(d) == 0 {
 		return "[]"

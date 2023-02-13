@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/cometbft/cometbft/libs/log"
-
-	storetypes "cosmossdk.io/store/types"
+	"github.com/tendermint/tendermint/libs/log"
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/codec"
+	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/cosmos/cosmos-sdk/x/group"
@@ -224,11 +223,6 @@ func (k Keeper) GetGroupSequence(ctx sdk.Context) uint64 {
 	return k.groupTable.Sequence().CurVal(ctx.KVStore(k.key))
 }
 
-// GetGroupPolicySeq returns the current value of the group policy table sequence
-func (k Keeper) GetGroupPolicySeq(ctx sdk.Context) uint64 {
-	return k.groupPolicySeq.CurVal(ctx.KVStore(k.key))
-}
-
 // proposalsByVPEnd returns all proposals whose voting_period_end is after the `endTime` time argument.
 func (k Keeper) proposalsByVPEnd(ctx sdk.Context, endTime time.Time) (proposals []group.Proposal, err error) {
 	timeBytes := sdk.FormatTimeBytes(endTime)
@@ -283,13 +277,12 @@ func (k Keeper) abortProposals(ctx sdk.Context, groupPolicyAddr sdk.AccAddress) 
 		return err
 	}
 
-	//nolint:gosec // "implicit memory aliasing in the for loop (because of the pointer on &proposalInfo)"
 	for _, proposalInfo := range proposals {
 		// Mark all proposals still in the voting phase as aborted.
 		if proposalInfo.Status == group.PROPOSAL_STATUS_SUBMITTED {
 			proposalInfo.Status = group.PROPOSAL_STATUS_ABORTED
 
-			if err := k.proposalTable.Update(ctx.KVStore(k.key), proposalInfo.Id, &proposalInfo); err != nil {
+			if err := k.proposalTable.Update(ctx.KVStore(k.key), proposalInfo.Id, &proposalInfo); err != nil { //nolint:gosec // implicit memory aliasing in for loop
 				return err
 			}
 		}
@@ -328,9 +321,8 @@ func (k Keeper) pruneVotes(ctx sdk.Context, proposalID uint64) error {
 		return err
 	}
 
-	//nolint:gosec // "implicit memory aliasing in the for loop (because of the pointer on &v)"
 	for _, v := range votes {
-		err = k.voteTable.Delete(ctx.KVStore(k.key), &v)
+		err = k.voteTable.Delete(ctx.KVStore(k.key), &v) //nolint:gosec // implicit memory aliasing in for loop
 		if err != nil {
 			return err
 		}
@@ -388,7 +380,8 @@ func (k Keeper) TallyProposalsAtVPEnd(ctx sdk.Context) error {
 	if err != nil {
 		return nil
 	}
-	//nolint:gosec // "implicit memory aliasing in the for loop (because of the pointers in the loop)"
+
+	//nolint:gosec // implicit memory aliasing in for loop
 	for _, proposal := range proposals {
 		policyInfo, err := k.getGroupPolicyInfo(ctx, proposal.GroupPolicyAddress)
 		if err != nil {
@@ -400,8 +393,8 @@ func (k Keeper) TallyProposalsAtVPEnd(ctx sdk.Context) error {
 			return sdkerrors.Wrap(err, "group")
 		}
 
-		proposalID := proposal.Id
 		if proposal.Status == group.PROPOSAL_STATUS_ABORTED || proposal.Status == group.PROPOSAL_STATUS_WITHDRAWN {
+			proposalID := proposal.Id
 			if err := k.pruneProposal(ctx, proposalID); err != nil {
 				return err
 			}
@@ -413,7 +406,7 @@ func (k Keeper) TallyProposalsAtVPEnd(ctx sdk.Context) error {
 				return sdkerrors.Wrap(err, "doTallyAndUpdate")
 			}
 
-			if err := k.proposalTable.Update(ctx.KVStore(k.key), proposal.Id, &proposal); err != nil {
+			if err := k.proposalTable.Update(ctx.KVStore(k.key), proposal.Id, &proposal); err != nil { //nolint:gosec // implicit memory aliasing in for loop
 				return sdkerrors.Wrap(err, "proposal update")
 			}
 		}

@@ -3,7 +3,7 @@ package secp256r1
 import (
 	"testing"
 
-	proto "github.com/cosmos/gogoproto/proto"
+	proto "github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -62,7 +62,7 @@ func (suite *PKSuite) TestEquals() {
 	require.False(suite.pk.Equals(pkOther))
 	require.True(pkOther.Equals(pkOther2))
 	require.True(pkOther2.Equals(pkOther))
-	require.True(pkOther.Equals(pkOther), "Equals must be reflexive") //nolint:gocritic // false positive
+	require.True(pkOther.Equals(pkOther), "Equals must be reflexive")
 }
 
 func (suite *PKSuite) TestMarshalProto() {
@@ -79,15 +79,11 @@ func (suite *PKSuite) TestMarshalProto() {
 	/**** test structure marshalling with codec ****/
 
 	pk = PubKey{}
-	emptyRegistry := types.NewInterfaceRegistry()
-	emptyCodec := codec.NewProtoCodec(emptyRegistry)
 	registry := types.NewInterfaceRegistry()
-	RegisterInterfaces(registry)
-	pubkeyCodec := codec.NewProtoCodec(registry)
-
-	bz, err = emptyCodec.Marshal(suite.pk)
+	cdc := codec.NewProtoCodec(registry)
+	bz, err = cdc.Marshal(suite.pk)
 	require.NoError(err)
-	require.NoError(emptyCodec.Unmarshal(bz, &pk))
+	require.NoError(cdc.Unmarshal(bz, &pk))
 	require.True(pk.Equals(suite.pk))
 
 	const bufSize = 100
@@ -105,17 +101,17 @@ func (suite *PKSuite) TestMarshalProto() {
 	require.Equal(bz, bz2[(bufSize-pk.Size()):])
 
 	/**** test interface marshalling ****/
-	bz, err = pubkeyCodec.MarshalInterface(suite.pk)
+	bz, err = cdc.MarshalInterface(suite.pk)
 	require.NoError(err)
 	var pkI cryptotypes.PubKey
-	err = emptyCodec.UnmarshalInterface(bz, &pkI)
+	err = cdc.UnmarshalInterface(bz, &pkI)
 	require.EqualError(err, "no registered implementations of type types.PubKey")
 
-	RegisterInterfaces(emptyRegistry)
-	require.NoError(emptyCodec.UnmarshalInterface(bz, &pkI))
+	RegisterInterfaces(registry)
+	require.NoError(cdc.UnmarshalInterface(bz, &pkI))
 	require.True(pkI.Equals(suite.pk))
 
-	require.Error(emptyCodec.UnmarshalInterface(bz, nil), "nil should fail")
+	require.Error(cdc.UnmarshalInterface(bz, nil), "nil should fail")
 }
 
 func (suite *PKSuite) TestSize() {

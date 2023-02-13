@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"github.com/99designs/keyring"
-	cmtcrypto "github.com/cometbft/cometbft/crypto"
 	"github.com/pkg/errors"
+	tmcrypto "github.com/tendermint/tendermint/crypto"
 
 	"github.com/cosmos/cosmos-sdk/client/input"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -23,7 +23,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
-	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	"github.com/cosmos/go-bip39"
 )
 
@@ -104,10 +103,10 @@ type Keyring interface {
 // Signer is implemented by key stores that want to provide signing capabilities.
 type Signer interface {
 	// Sign sign byte messages with a user key.
-	Sign(uid string, msg []byte, signMode signing.SignMode) ([]byte, types.PubKey, error)
+	Sign(uid string, msg []byte) ([]byte, types.PubKey, error)
 
 	// SignByAddress sign byte messages with a user key providing the address.
-	SignByAddress(address sdk.Address, msg []byte, signMode signing.SignMode) ([]byte, types.PubKey, error)
+	SignByAddress(address sdk.Address, msg []byte) ([]byte, types.PubKey, error)
 }
 
 // Importer is implemented by key stores that support import of public and private keys.
@@ -145,15 +144,6 @@ type Options struct {
 	SupportedAlgos SigningAlgoList
 	// supported signing algorithms for Ledger
 	SupportedAlgosLedger SigningAlgoList
-	// define Ledger Derivation function
-	LedgerDerivation func() (ledger.SECP256K1, error)
-	// define Ledger key generation function
-	LedgerCreateKey func([]byte) types.PubKey
-	// define Ledger app name
-	LedgerAppName string
-	// indicate whether Ledger should skip DER Conversion on signature,
-	// depending on which format (DER or BER) the Ledger app returns signatures
-	LedgerSigSkipDERConv bool
 }
 
 // NewInMemory creates a transient keyring useful for testing
@@ -221,22 +211,6 @@ func newKeystore(kr keyring.Keyring, cdc codec.Codec, backend string, opts ...Op
 
 	for _, optionFn := range opts {
 		optionFn(&options)
-	}
-
-	if options.LedgerDerivation != nil {
-		ledger.SetDiscoverLedger(options.LedgerDerivation)
-	}
-
-	if options.LedgerCreateKey != nil {
-		ledger.SetCreatePubkey(options.LedgerCreateKey)
-	}
-
-	if options.LedgerAppName != "" {
-		ledger.SetAppName(options.LedgerAppName)
-	}
-
-	if options.LedgerSigSkipDERConv {
-		ledger.SetSkipDERConversion()
 	}
 
 	return keystore{
@@ -357,7 +331,7 @@ func (ks keystore) ImportPubKey(uid string, armor string) error {
 	return nil
 }
 
-func (ks keystore) Sign(uid string, msg []byte, signMode signing.SignMode) ([]byte, types.PubKey, error) {
+func (ks keystore) Sign(uid string, msg []byte) ([]byte, types.PubKey, error) {
 	k, err := ks.Key(uid)
 	if err != nil {
 		return nil, nil, err
@@ -378,7 +352,7 @@ func (ks keystore) Sign(uid string, msg []byte, signMode signing.SignMode) ([]by
 		return sig, priv.PubKey(), nil
 
 	case k.GetLedger() != nil:
-		return SignWithLedger(k, msg, signMode)
+		return SignWithLedger(k, msg)
 
 		// multi or offline record
 	default:
@@ -391,13 +365,13 @@ func (ks keystore) Sign(uid string, msg []byte, signMode signing.SignMode) ([]by
 	}
 }
 
-func (ks keystore) SignByAddress(address sdk.Address, msg []byte, signMode signing.SignMode) ([]byte, types.PubKey, error) {
+func (ks keystore) SignByAddress(address sdk.Address, msg []byte) ([]byte, types.PubKey, error) {
 	k, err := ks.KeyByAddress(address)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return ks.Sign(k.Name, msg, signMode)
+	return ks.Sign(k.Name, msg)
 }
 
 func (ks keystore) SaveLedgerKey(uid string, algo SignatureAlgo, hrp string, coinType, account, index uint32) (*Record, error) {
@@ -599,7 +573,7 @@ func (ks keystore) SupportedAlgorithms() (SigningAlgoList, SigningAlgoList) {
 // SignWithLedger signs a binary message with the ledger device referenced by an Info object
 // and returns the signed bytes and the public key. It returns an error if the device could
 // not be queried or it returned an error.
-func SignWithLedger(k *Record, msg []byte, signMode signing.SignMode) (sig []byte, pub types.PubKey, err error) {
+func SignWithLedger(k *Record, msg []byte) (sig []byte, pub types.PubKey, err error) {
 	ledgerInfo := k.GetLedger()
 	if ledgerInfo == nil {
 		return nil, nil, errors.New("not a ledger object")
@@ -612,23 +586,9 @@ func SignWithLedger(k *Record, msg []byte, signMode signing.SignMode) (sig []byt
 		return
 	}
 
-	switch signMode {
-	case signing.SignMode_SIGN_MODE_TEXTUAL:
-		sig, err = priv.Sign(msg)
-		if err != nil {
-			return nil, nil, err
-		}
-	case signing.SignMode_SIGN_MODE_LEGACY_AMINO_JSON:
-		sig, err = priv.SignLedgerAminoJSON(msg)
-		if err != nil {
-			return nil, nil, err
-		}
-	default:
-		return nil, nil, fmt.Errorf("got invalid sign mode %d, expected LEGACY_AMINO_JSON or TEXTUAL", signMode)
-	}
-
-	if !priv.PubKey().VerifySignature(msg, sig) {
-		return nil, nil, errors.New("Ledger generated an invalid signature. Perhaps you have multiple ledgers and need to try another one")
+	sig, err = priv.Sign(msg)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	return sig, priv.PubKey(), nil
@@ -718,7 +678,7 @@ func newRealPrompt(dir string, buf io.Reader) func(string) (string, error) {
 			}
 
 			buf := bufio.NewReader(buf)
-			pass, err := input.GetPassword(fmt.Sprintf("Enter keyring passphrase (attempt %d/%d):", failureCounter, maxPassphraseEntryAttempts), buf)
+			pass, err := input.GetPassword("Enter keyring passphrase:", buf)
 			if err != nil {
 				// NOTE: LGTM.io reports a false positive alert that states we are printing the password,
 				// but we only log the error.
@@ -752,7 +712,7 @@ func newRealPrompt(dir string, buf io.Reader) func(string) (string, error) {
 				continue
 			}
 
-			saltBytes := cmtcrypto.CRandBytes(16)
+			saltBytes := tmcrypto.CRandBytes(16)
 			passwordHash, err := bcrypt.GenerateFromPassword(saltBytes, []byte(pass), 2)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
@@ -885,6 +845,7 @@ func (ks keystore) MigrateAll() ([]*Record, error) {
 	}
 
 	sort.Strings(keys)
+
 	var recs []*Record
 	for _, key := range keys {
 		// The keyring items only with `.info` consists the key info.

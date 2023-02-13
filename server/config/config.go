@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/viper"
 
-	pruningtypes "cosmossdk.io/store/pruning/types"
-
+	clientflags "github.com/cosmos/cosmos-sdk/client/flags"
+	pruningtypes "github.com/cosmos/cosmos-sdk/pruning/types"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
@@ -18,10 +18,13 @@ const (
 	defaultMinGasPrices = ""
 
 	// DefaultAPIAddress defines the default address to bind the API server to.
-	DefaultAPIAddress = "tcp://localhost:1317"
+	DefaultAPIAddress = "tcp://0.0.0.0:1317"
 
 	// DefaultGRPCAddress defines the default address to bind the gRPC server to.
-	DefaultGRPCAddress = "localhost:9090"
+	DefaultGRPCAddress = "0.0.0.0:9090"
+
+	// DefaultGRPCWebAddress defines the default address to bind the gRPC-web server to.
+	DefaultGRPCWebAddress = "0.0.0.0:9091"
 
 	// DefaultGRPCMaxRecvMsgSize defines the default gRPC max message size in
 	// bytes the server can receive.
@@ -61,15 +64,15 @@ type BaseConfig struct {
 
 	// MinRetainBlocks defines the minimum block height offset from the current
 	// block being committed, such that blocks past this offset may be pruned
-	// from CometBFT. It is used as part of the process of determining the
+	// from Tendermint. It is used as part of the process of determining the
 	// ResponseCommit.RetainHeight value during ABCI Commit. A value of 0 indicates
 	// that no blocks should be pruned.
 	//
-	// This configuration value is only responsible for pruning CometBFT blocks.
+	// This configuration value is only responsible for pruning Tendermint blocks.
 	// It has no bearing on application state pruning which is determined by the
 	// "pruning-*" configurations.
 	//
-	// Note: CometBFT block pruning is dependant on this parameter in conjunction
+	// Note: Tendermint block pruning is dependant on this parameter in conunction
 	// with the unbonding (safety threshold) period, state pruning and state sync
 	// snapshot parameters to determine the correct minimum value of
 	// ResponseCommit.RetainHeight.
@@ -79,7 +82,7 @@ type BaseConfig struct {
 	InterBlockCache bool `mapstructure:"inter-block-cache"`
 
 	// IndexEvents defines the set of events in the form {eventType}.{attributeKey},
-	// which informs CometBFT what to index. If empty, all events will be indexed.
+	// which informs Tendermint what to index. If empty, all events will be indexed.
 	IndexEvents []string `mapstructure:"index-events"`
 
 	// IavlCacheSize set the size of the iavl tree cache.
@@ -92,7 +95,7 @@ type BaseConfig struct {
 	IAVLLazyLoading bool `mapstructure:"iavl-lazy-loading"`
 
 	// AppDBBackend defines the type of Database to use for the application and snapshots databases.
-	// An empty string indicates that the CometBFT config's DBBackend value should be used.
+	// An empty string indicates that the Tendermint config's DBBackend value should be used.
 	AppDBBackend string `mapstructure:"app-db-backend"`
 }
 
@@ -113,18 +116,50 @@ type APIConfig struct {
 	// MaxOpenConnections defines the number of maximum open connections
 	MaxOpenConnections uint `mapstructure:"max-open-connections"`
 
-	// RPCReadTimeout defines the CometBFT RPC read timeout (in seconds)
+	// RPCReadTimeout defines the Tendermint RPC read timeout (in seconds)
 	RPCReadTimeout uint `mapstructure:"rpc-read-timeout"`
 
-	// RPCWriteTimeout defines the CometBFT RPC write timeout (in seconds)
+	// RPCWriteTimeout defines the Tendermint RPC write timeout (in seconds)
 	RPCWriteTimeout uint `mapstructure:"rpc-write-timeout"`
 
-	// RPCMaxBodyBytes defines the CometBFT maximum request body (in bytes)
+	// RPCMaxBodyBytes defines the Tendermint maximum response body (in bytes)
 	RPCMaxBodyBytes uint `mapstructure:"rpc-max-body-bytes"`
 
 	// TODO: TLS/Proxy configuration.
 	//
 	// Ref: https://github.com/cosmos/cosmos-sdk/issues/6420
+}
+
+// RosettaConfig defines the Rosetta API listener configuration.
+type RosettaConfig struct {
+	// Address defines the API server to listen on
+	Address string `mapstructure:"address"`
+
+	// Blockchain defines the blockchain name
+	// defaults to DefaultBlockchain
+	Blockchain string `mapstructure:"blockchain"`
+
+	// Network defines the network name
+	Network string `mapstructure:"network"`
+
+	// Retries defines the maximum number of retries
+	// rosetta will do before quitting
+	Retries int `mapstructure:"retries"`
+
+	// Enable defines if the API server should be enabled.
+	Enable bool `mapstructure:"enable"`
+
+	// Offline defines if the server must be run in offline mode
+	Offline bool `mapstructure:"offline"`
+
+	// EnableFeeSuggestion defines if the server should suggest fee by default
+	EnableFeeSuggestion bool `mapstructure:"enable-fee-suggestion"`
+
+	// GasToSuggest defines gas limit when calculating the fee
+	GasToSuggest int `mapstructure:"gas-to-suggest"`
+
+	// DenomToSuggest defines the defult denom for fee suggestion
+	DenomToSuggest string `mapstructure:"denom-to-suggest"`
 }
 
 // GRPCConfig defines configuration for the gRPC server.
@@ -148,6 +183,12 @@ type GRPCConfig struct {
 type GRPCWebConfig struct {
 	// Enable defines if the gRPC-web should be enabled.
 	Enable bool `mapstructure:"enable"`
+
+	// Address defines the gRPC-web server to listen on
+	Address string `mapstructure:"address"`
+
+	// EnableUnsafeCORS defines if CORS should be enabled (unsafe - use it at your own risk)
+	EnableUnsafeCORS bool `mapstructure:"enable-unsafe-cors"`
 }
 
 // StateSyncConfig defines the state sync snapshot configuration.
@@ -159,16 +200,6 @@ type StateSyncConfig struct {
 	// SnapshotKeepRecent sets the number of recent state sync snapshots to keep.
 	// 0 keeps all snapshots.
 	SnapshotKeepRecent uint32 `mapstructure:"snapshot-keep-recent"`
-}
-
-// MempoolConfig defines the configurations for the SDK built-in app-side mempool
-// implementations.
-type MempoolConfig struct {
-	// MaxTxs defines the behavior of the mempool. A negative value indicates
-	// the mempool is disabled entirely, zero indicates that the mempool is
-	// unbounded in how many txs it may contain, and a positive value indicates
-	// the maximum amount of txs it may contain.
-	MaxTxs int
 }
 
 type (
@@ -210,11 +241,11 @@ type Config struct {
 	Telemetry telemetry.Config `mapstructure:"telemetry"`
 	API       APIConfig        `mapstructure:"api"`
 	GRPC      GRPCConfig       `mapstructure:"grpc"`
+	Rosetta   RosettaConfig    `mapstructure:"rosetta"`
 	GRPCWeb   GRPCWebConfig    `mapstructure:"grpc-web"`
 	StateSync StateSyncConfig  `mapstructure:"state-sync"`
 	Store     StoreConfig      `mapstructure:"store"`
 	Streamers StreamersConfig  `mapstructure:"streamers"`
-	Mempool   MempoolConfig    `mapstructure:"mempool"`
 }
 
 // SetMinGasPrices sets the validator's minimum gas prices.
@@ -255,7 +286,7 @@ func DefaultConfig() *Config {
 			PruningInterval:     "0",
 			MinRetainBlocks:     0,
 			IndexEvents:         make([]string, 0),
-			IAVLCacheSize:       781250,
+			IAVLCacheSize:       781250, // 50 MB
 			IAVLDisableFastNode: false,
 			IAVLLazyLoading:     false,
 			AppDBBackend:        "",
@@ -278,8 +309,20 @@ func DefaultConfig() *Config {
 			MaxRecvMsgSize: DefaultGRPCMaxRecvMsgSize,
 			MaxSendMsgSize: DefaultGRPCMaxSendMsgSize,
 		},
+		Rosetta: RosettaConfig{
+			Enable:              false,
+			Address:             ":8080",
+			Blockchain:          "app",
+			Network:             "network",
+			Retries:             3,
+			Offline:             false,
+			EnableFeeSuggestion: false,
+			GasToSuggest:        clientflags.DefaultGasLimit,
+			DenomToSuggest:      "uatom",
+		},
 		GRPCWeb: GRPCWebConfig{
-			Enable: true,
+			Enable:  true,
+			Address: DefaultGRPCWebAddress,
 		},
 		StateSync: StateSyncConfig{
 			SnapshotInterval:   0,
@@ -298,9 +341,6 @@ func DefaultConfig() *Config {
 				// in face of system crash.
 				Fsync: false,
 			},
-		},
-		Mempool: MempoolConfig{
-			MaxTxs: 5_000,
 		},
 	}
 }

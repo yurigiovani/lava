@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -31,6 +30,7 @@ transaction will be not be performed as that will require RPC communication with
 		Args:   cobra.ExactArgs(1),
 	}
 
+	cmd.Flags().String(flags.FlagChainID, "", "The network chain ID")
 	flags.AddTxFlagsToCmd(cmd)
 
 	return cmd
@@ -112,8 +112,7 @@ func printAndValidateSigs(
 				Sequence:      accSeq,
 				PubKey:        pubKey,
 			}
-			// When Textual is wired up, the context argument should be retrieved from the client context.
-			err = authsigning.VerifySignature(context.TODO(), pubKey, signingData, sig.Data, signModeHandler, sigTx)
+			err = authsigning.VerifySignature(pubKey, signingData, sig.Data, signModeHandler, sigTx)
 			if err != nil {
 				return false
 			}

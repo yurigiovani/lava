@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cosmos/cosmos-sdk/log"
-
-	"cosmossdk.io/store/prefix"
-	storetypes "cosmossdk.io/store/types"
+	"github.com/tendermint/tendermint/libs/log"
 
 	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/store/prefix"
+	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/cosmos/cosmos-sdk/x/capability/types"
@@ -101,11 +100,6 @@ func (k *Keeper) Seal() {
 	k.sealed = true
 }
 
-// IsSealed returns if the keeper is sealed.
-func (k *Keeper) IsSealed() bool {
-	return k.sealed
-}
-
 // InitMemStore will assure that the module store is a memory store (it will panic if it's not)
 // and willl initialize it. The function is safe to be called multiple times.
 // InitMemStore must be called every time the app starts before the keeper is used (so
@@ -120,12 +114,12 @@ func (k *Keeper) InitMemStore(ctx sdk.Context) {
 	}
 
 	// create context with no block gas meter to ensure we do not consume gas during local initialization logic.
-	noGasCtx := ctx.WithBlockGasMeter(storetypes.NewInfiniteGasMeter())
+	noGasCtx := ctx.WithBlockGasMeter(sdk.NewInfiniteGasMeter())
 
 	// check if memory store has not been initialized yet by checking if initialized flag is nil.
 	if !k.IsInitialized(noGasCtx) {
 		prefixStore := prefix.NewStore(noGasCtx.KVStore(k.storeKey), types.KeyPrefixIndexCapability)
-		iterator := storetypes.KVStorePrefixIterator(prefixStore, nil)
+		iterator := sdk.KVStorePrefixIterator(prefixStore, nil)
 
 		// initialize the in-memory store for all persisted capabilities
 		defer iterator.Close()

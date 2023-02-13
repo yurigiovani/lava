@@ -3,61 +3,48 @@ package keeper_test
 import (
 	"testing"
 
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
+	abci "github.com/tendermint/tendermint/abci/types"
+	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 
-	storetypes "cosmossdk.io/store/types"
-
-	"github.com/cosmos/cosmos-sdk/testutil"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
-	"github.com/cosmos/cosmos-sdk/x/crisis"
-	"github.com/cosmos/cosmos-sdk/x/crisis/keeper"
-	crisistestutil "github.com/cosmos/cosmos-sdk/x/crisis/testutil"
 	"github.com/cosmos/cosmos-sdk/x/crisis/types"
 )
 
 func TestLogger(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	supplyKeeper := crisistestutil.NewMockSupplyKeeper(ctrl)
+	app := simapp.Setup(t, false)
 
-	key := storetypes.NewKVStoreKey(types.StoreKey)
-	testCtx := testutil.DefaultContextWithDB(t, key, storetypes.NewTransientStoreKey("transient_test"))
-	encCfg := moduletestutil.MakeTestEncodingConfig(crisis.AppModuleBasic{})
-	keeper := keeper.NewKeeper(encCfg.Codec, key, 5, supplyKeeper, "", "")
+	ctx := app.NewContext(true, tmproto.Header{})
 
 	require.Equal(t,
-		testCtx.Ctx.Logger().With("module", "x/"+types.ModuleName),
-		keeper.Logger(testCtx.Ctx))
+		ctx.Logger().With("module", "x/"+types.ModuleName),
+		app.CrisisKeeper.Logger(ctx))
 }
 
 func TestInvariants(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	supplyKeeper := crisistestutil.NewMockSupplyKeeper(ctrl)
+	app := simapp.Setup(t, false)
+	app.Commit()
+	app.BeginBlock(abci.RequestBeginBlock{Header: tmproto.Header{Height: app.LastBlockHeight() + 1}})
 
-	key := storetypes.NewKVStoreKey(types.StoreKey)
-	encCfg := moduletestutil.MakeTestEncodingConfig(crisis.AppModuleBasic{})
-	keeper := keeper.NewKeeper(encCfg.Codec, key, 5, supplyKeeper, "", "")
-	require.Equal(t, keeper.InvCheckPeriod(), uint(5))
+	require.Equal(t, app.CrisisKeeper.InvCheckPeriod(), uint(5))
 
-	orgInvRoutes := keeper.Routes()
-	keeper.RegisterRoute("testModule", "testRoute", func(sdk.Context) (string, bool) { return "", false })
-	invar := keeper.Invariants()
-	require.Equal(t, len(invar), len(orgInvRoutes)+1)
+	// SimApp has 11 registered invariants
+	orgInvRoutes := app.CrisisKeeper.Routes()
+	app.CrisisKeeper.RegisterRoute("testModule", "testRoute", func(sdk.Context) (string, bool) { return "", false })
+	require.Equal(t, len(app.CrisisKeeper.Routes()), len(orgInvRoutes)+1)
 }
 
 func TestAssertInvariants(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	supplyKeeper := crisistestutil.NewMockSupplyKeeper(ctrl)
+	app := simapp.Setup(t, false)
+	app.Commit()
+	app.BeginBlock(abci.RequestBeginBlock{Header: tmproto.Header{Height: app.LastBlockHeight() + 1}})
 
-	key := storetypes.NewKVStoreKey(types.StoreKey)
-	testCtx := testutil.DefaultContextWithDB(t, key, storetypes.NewTransientStoreKey("transient_test"))
-	encCfg := moduletestutil.MakeTestEncodingConfig(crisis.AppModuleBasic{})
-	keeper := keeper.NewKeeper(encCfg.Codec, key, 5, supplyKeeper, "", "")
+	ctx := app.NewContext(true, tmproto.Header{})
 
-	keeper.RegisterRoute("testModule", "testRoute1", func(sdk.Context) (string, bool) { return "", false })
-	require.NotPanics(t, func() { keeper.AssertInvariants(testCtx.Ctx) })
+	app.CrisisKeeper.RegisterRoute("testModule", "testRoute1", func(sdk.Context) (string, bool) { return "", false })
+	require.NotPanics(t, func() { app.CrisisKeeper.AssertInvariants(ctx) })
 
-	keeper.RegisterRoute("testModule", "testRoute2", func(sdk.Context) (string, bool) { return "", true })
-	require.Panics(t, func() { keeper.AssertInvariants(testCtx.Ctx) })
+	app.CrisisKeeper.RegisterRoute("testModule", "testRoute2", func(sdk.Context) (string, bool) { return "", true })
+	require.Panics(t, func() { app.CrisisKeeper.AssertInvariants(ctx) })
 }

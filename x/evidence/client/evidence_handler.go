@@ -12,7 +12,6 @@ type (
 	}
 )
 
-// NewEvidenceHandler returns an EvidenceHandler.
 func NewEvidenceHandler(cliHandler CLIHandlerFn) EvidenceHandler {
 	return EvidenceHandler{
 		CLIHandler: cliHandler,

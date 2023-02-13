@@ -3,9 +3,8 @@ package types
 import (
 	"encoding/json"
 	fmt "fmt"
-	strings "strings"
 
-	"github.com/cosmos/gogoproto/proto"
+	"github.com/gogo/protobuf/proto"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
@@ -20,7 +19,7 @@ type (
 		// doesn't require access to any other information.
 		ValidateBasic() error
 
-		// GetSigners returns the addrs of signers that must sign.
+		// Signers returns the addrs of signers that must sign.
 		// CONTRACT: All signatures must be present to be valid.
 		// CONTRACT: Returns addrs in some deterministic order.
 		GetSigners() []AccAddress
@@ -42,7 +41,7 @@ type (
 
 	// Tx defines the interface a transaction must fulfill.
 	Tx interface {
-		// GetMsgs gets the all the transaction's messages.
+		// Gets the all the transaction's messages.
 		GetMsgs() []Msg
 
 		// ValidateBasic does a simple and lightweight validation check that doesn't
@@ -59,7 +58,7 @@ type (
 		FeeGranter() AccAddress
 	}
 
-	// TxWithMemo must have GetMemo() method to use ValidateMemoDecorator
+	// Tx must have GetMemo() method to use ValidateMemoDecorator
 	TxWithMemo interface {
 		Tx
 		GetMemo() string
@@ -102,16 +101,4 @@ func GetMsgFromTypeURL(cdc codec.Codec, input string) (Msg, error) {
 	}
 
 	return msg, nil
-}
-
-// GetModuleNameFromTypeURL assumes that module name is the second element of the msg type URL
-// e.g. "cosmos.bank.v1beta1.MsgSend" => "bank"
-// It returns an empty string if the input is not a valid type URL
-func GetModuleNameFromTypeURL(input string) string {
-	moduleName := strings.Split(input, ".")
-	if len(moduleName) > 1 {
-		return moduleName[1]
-	}
-
-	return ""
 }

@@ -1,18 +1,15 @@
 package ante_test
 
 import (
-	"testing"
-
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/ante"
 	"github.com/cosmos/cosmos-sdk/x/auth/tx"
-	"github.com/stretchr/testify/require"
 )
 
-func TestRejectExtensionOptionsDecorator(t *testing.T) {
-	suite := SetupTestSuite(t, true)
+func (suite *AnteTestSuite) TestRejectExtensionOptionsDecorator() {
+	suite.SetupTest(true) // setup
 
 	testCases := []struct {
 		msg   string
@@ -22,7 +19,7 @@ func TestRejectExtensionOptionsDecorator(t *testing.T) {
 		{"reject extension", false},
 	}
 	for _, tc := range testCases {
-		t.Run(tc.msg, func(t *testing.T) {
+		suite.Run(tc.msg, func() {
 			txBuilder := suite.clientCtx.TxConfig.NewTxBuilder()
 
 			reod := ante.NewExtensionOptionsDecorator(func(_ *codectypes.Any) bool {
@@ -33,7 +30,7 @@ func TestRejectExtensionOptionsDecorator(t *testing.T) {
 			// no extension options should not trigger an error
 			theTx := txBuilder.GetTx()
 			_, err := antehandler(suite.ctx, theTx, false)
-			require.NoError(t, err)
+			suite.Require().NoError(err)
 
 			extOptsTxBldr, ok := txBuilder.(tx.ExtensionOptionsTxBuilder)
 			if !ok {
@@ -43,14 +40,14 @@ func TestRejectExtensionOptionsDecorator(t *testing.T) {
 
 			// set an extension option and check
 			any, err := codectypes.NewAnyWithValue(testdata.NewTestMsg())
-			require.NoError(t, err)
+			suite.Require().NoError(err)
 			extOptsTxBldr.SetExtensionOptions(any)
 			theTx = txBuilder.GetTx()
 			_, err = antehandler(suite.ctx, theTx, false)
 			if tc.allow {
-				require.NoError(t, err)
+				suite.Require().NoError(err)
 			} else {
-				require.EqualError(t, err, "unknown extension options")
+				suite.Require().EqualError(err, "unknown extension options")
 			}
 		})
 	}

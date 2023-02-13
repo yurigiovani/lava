@@ -39,7 +39,8 @@ A typical testing flow might look like the following:
 		s.network, err = network.New(s.T(), s.T().TempDir(), cfg)
 		s.Require().NoError(err)
 
-		s.Require().NoError(s.network.WaitForNextBlock())
+		_, err = s.network.WaitForHeight(1)
+		s.Require().NoError(err)
 	}
 
 	func (s *IntegrationTestSuite) TearDownSuite() {
@@ -55,7 +56,7 @@ A typical testing flow might look like the following:
 		baseURL := val.APIAddress
 
 		// Use baseURL to make API HTTP requests or use val.RPCClient to make direct
-		// CometBFT RPC calls.
+		// Tendermint RPC calls.
 		// ...
 	}
 

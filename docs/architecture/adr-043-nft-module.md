@@ -4,8 +4,6 @@
 
 * 2021-05-01: Initial Draft
 * 2021-07-02: Review updates
-* 2022-06-15: Add batch operation
-* 2022-11-11: Remove strict validation of classID and tokenID
 
 ## Status
 
@@ -76,7 +74,7 @@ message Class {
 }
 ```
 
-* `id` is used as the primary index for storing the class; _required_
+* `id` is an alphanumeric identifier of the NFT class; it is used as the primary index for storing the class; _required_
 * `name` is a descriptive name of the NFT class; _optional_
 * `symbol` is the symbol usually shown on exchanges for the NFT class; _optional_
 * `description` is a detailed description of the NFT class; _optional_
@@ -98,8 +96,8 @@ message NFT {
 }
 ```
 
-* `class_id` is the identifier of the NFT class where the NFT belongs; _required_
-* `id` is an identifier of the NFT, unique within the scope of its class. It is specified by the creator of the NFT and may be expanded to use DID in the future. `class_id` combined with `id` uniquely identifies an NFT and is used as the primary index for storing the NFT; _required_
+* `class_id` is the identifier of the NFT class where the NFT belongs; _required_,`[a-zA-Z][a-zA-Z0-9/:-]{2,100}`
+* `id` is an alphanumeric identifier of the NFT, unique within the scope of its class. It is specified by the creator of the NFT and may be expanded to use DID in the future. `class_id` combined with `id` uniquely identifies an NFT and is used as the primary index for storing the NFT; _required_,`[a-zA-Z][a-zA-Z0-9/:-]{2,100}`
 
   ```text
   {class_id}/{id} --> NFT (bytes)
@@ -115,31 +113,24 @@ This ADR doesn't specify values that `data` can take; however, best practices re
 
 ```go
 type Keeper interface {
-  NewClass(ctx sdk.Context,class Class)
-  UpdateClass(ctx sdk.Context,class Class)
+  NewClass(class Class)
+  UpdateClass(class Class)
 
-  Mint(ctx sdk.Context,nft NFT，receiver sdk.AccAddress)   // updates totalSupply
-  BatchMint(ctx sdk.Context, tokens []NFT,receiver sdk.AccAddress) error
+  Mint(nft NFT，receiver sdk.AccAddress)   // updates totalSupply
+  Burn(classId string, nftId string)    // updates totalSupply
+  Update(nft NFT)
+  Transfer(classId string, nftId string, receiver sdk.AccAddress)
 
-  Burn(ctx sdk.Context, classId string, nftId string)    // updates totalSupply
-  BatchBurn(ctx sdk.Context, classID string, nftIDs []string) error
+  GetClass(classId string) Class
+  GetClasses() []Class
 
-  Update(ctx sdk.Context, nft NFT)
-  BatchUpdate(ctx sdk.Context, tokens []NFT) error
+  GetNFT(classId string, nftId string) NFT
+  GetNFTsOfClassByOwner(classId string, owner sdk.AccAddress) []NFT
+  GetNFTsOfClass(classId string) []NFT
 
-  Transfer(ctx sdk.Context, classId string, nftId string, receiver sdk.AccAddress)
-  BatchTransfer(ctx sdk.Context, classID string, nftIDs []string, receiver sdk.AccAddress) error
-
-  GetClass(ctx sdk.Context, classId string) Class
-  GetClasses(ctx sdk.Context) []Class
-
-  GetNFT(ctx sdk.Context, classId string, nftId string) NFT
-  GetNFTsOfClassByOwner(ctx sdk.Context, classId string, owner sdk.AccAddress) []NFT
-  GetNFTsOfClass(ctx sdk.Context, classId string) []NFT
-
-  GetOwner(ctx sdk.Context, classId string, nftId string) sdk.AccAddress
-  GetBalance(ctx sdk.Context, classId string, owner sdk.AccAddress) uint64
-  GetTotalSupply(ctx sdk.Context, classId string) uint64
+  GetOwner(classId string, nftId string) sdk.AccAddress
+  GetBalance(classId string, owner sdk.AccAddress) uint64
+  GetTotalSupply(classId string) uint64
 }
 ```
 
@@ -183,7 +174,7 @@ func (m msgServer) Send(ctx context.Context, msg *types.MsgSend) (*types.MsgSend
 
 The query service methods for the `x/nft` module are:
 
-```protobuf
+```proto
 service Query {
   // Balance queries the number of NFTs of a given class owned by the owner, same as balanceOf in ERC721
   rpc Balance(QueryBalanceRequest) returns (QueryBalanceResponse) {

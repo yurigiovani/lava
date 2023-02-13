@@ -3,14 +3,14 @@ package authz
 import (
 	"time"
 
-	"github.com/cosmos/cosmos-sdk/x/auth/migrations/legacytx"
 	authzcodec "github.com/cosmos/cosmos-sdk/x/authz/codec"
 
-	"github.com/cosmos/gogoproto/proto"
+	"github.com/gogo/protobuf/proto"
 
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
+	"github.com/cosmos/cosmos-sdk/x/auth/migrations/legacytx"
 )
 
 var (
@@ -64,6 +64,16 @@ func (msg MsgGrant) ValidateBasic() error {
 		return ErrGranteeIsGranter
 	}
 	return msg.Grant.ValidateBasic()
+}
+
+// Type implements the LegacyMsg.Type method.
+func (msg MsgGrant) Type() string {
+	return sdk.MsgTypeURL(&msg)
+}
+
+// Route implements the LegacyMsg.Route method.
+func (msg MsgGrant) Route() string {
+	return sdk.MsgTypeURL(&msg)
 }
 
 // GetSignBytes implements the LegacyMsg.GetSignBytes method.
@@ -147,6 +157,16 @@ func (msg MsgRevoke) ValidateBasic() error {
 	return nil
 }
 
+// Type implements the LegacyMsg.Type method.
+func (msg MsgRevoke) Type() string {
+	return sdk.MsgTypeURL(&msg)
+}
+
+// Route implements the LegacyMsg.Route method.
+func (msg MsgRevoke) Route() string {
+	return sdk.MsgTypeURL(&msg)
+}
+
 // GetSignBytes implements the LegacyMsg.GetSignBytes method.
 func (msg MsgRevoke) GetSignBytes() []byte {
 	return sdk.MustSortJSON(authzcodec.ModuleCdc.MustMarshalJSON(&msg))
@@ -202,17 +222,17 @@ func (msg MsgExec) ValidateBasic() error {
 		return sdkerrors.ErrInvalidRequest.Wrapf("messages cannot be empty")
 	}
 
-	msgs, err := msg.GetMessages()
-	if err != nil {
-		return err
-	}
-	for _, msg := range msgs {
-		if err = msg.ValidateBasic(); err != nil {
-			return err
-		}
-	}
-
 	return nil
+}
+
+// Type implements the LegacyMsg.Type method.
+func (msg MsgExec) Type() string {
+	return sdk.MsgTypeURL(&msg)
+}
+
+// Route implements the LegacyMsg.Route method.
+func (msg MsgExec) Route() string {
+	return sdk.MsgTypeURL(&msg)
 }
 
 // GetSignBytes implements the LegacyMsg.GetSignBytes method.

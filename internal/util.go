@@ -1,8 +1,6 @@
 package util
 
-import (
-	"fmt"
-)
+import "fmt"
 
 func CombineErrors(ret error, also error, desc string) error {
 	if also != nil {

@@ -1,7 +1,7 @@
 package tmservice
 
 import (
-	abci "github.com/cometbft/cometbft/abci/types"
+	abci "github.com/tendermint/tendermint/abci/types"
 )
 
 // ToABCIRequestQuery converts a gRPC ABCIQueryRequest type to an ABCI

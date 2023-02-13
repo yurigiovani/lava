@@ -3,18 +3,16 @@ package keys
 import (
 	"context"
 	"fmt"
-	"strings"
 	"testing"
 
-	"gotest.tools/v3/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
-	clienttestutil "github.com/cosmos/cosmos-sdk/client/testutil"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	"github.com/cosmos/cosmos-sdk/testutil"
-	clitestutil "github.com/cosmos/cosmos-sdk/testutil/cli"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -37,16 +35,16 @@ func Test_runListCmd(t *testing.T) {
 	kbHome2 := t.TempDir()
 
 	mockIn := testutil.ApplyMockIODiscardOutErr(cmd)
-	cdc := clienttestutil.MakeTestCodec(t)
-	kb, err := keyring.New(sdk.KeyringServiceName(), keyring.BackendTest, kbHome2, mockIn, cdc)
-	assert.NilError(t, err)
+	encCfg := simapp.MakeTestEncodingConfig()
+	kb, err := keyring.New(sdk.KeyringServiceName(), keyring.BackendTest, kbHome2, mockIn, encCfg.Codec)
+	require.NoError(t, err)
 
 	clientCtx := client.Context{}.WithKeyring(kb)
 	ctx := context.WithValue(context.Background(), client.ClientContextKey, &clientCtx)
 
 	path := "" // sdk.GetConfig().GetFullBIP44Path()
 	_, err = kb.NewAccount("something", testdata.TestMnemonic, "", path, hd.Secp256k1)
-	assert.NilError(t, err)
+	require.NoError(t, err)
 
 	t.Cleanup(cleanupKeys(t, kb, "something"))
 
@@ -80,23 +78,4 @@ func Test_runListCmd(t *testing.T) {
 			}
 		})
 	}
-}
-
-func Test_runListKeyTypeCmd(t *testing.T) {
-	cmd := ListKeyTypesCmd()
-
-	cdc := clienttestutil.MakeTestCodec(t)
-	kbHome := t.TempDir()
-	mockIn := testutil.ApplyMockIODiscardOutErr(cmd)
-
-	kb, err := keyring.New(sdk.KeyringServiceName(), keyring.BackendTest, kbHome, mockIn, cdc)
-	assert.NilError(t, err)
-
-	clientCtx := client.Context{}.
-		WithKeyringDir(kbHome).
-		WithKeyring(kb)
-
-	out, err := clitestutil.ExecTestCLICmd(clientCtx, cmd, []string{})
-	assert.NilError(t, err)
-	assert.Assert(t, strings.Contains(out.String(), string(hd.Secp256k1Type)))
 }

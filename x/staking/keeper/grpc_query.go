@@ -7,9 +7,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"cosmossdk.io/store/prefix"
-	storetypes "cosmossdk.io/store/types"
-
+	"github.com/cosmos/cosmos-sdk/store/prefix"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/cosmos/cosmos-sdk/x/staking/types"
@@ -17,7 +15,7 @@ import (
 
 // Querier is used as Keeper will have duplicate methods if used directly, and gRPC names take precedence over keeper
 type Querier struct {
-	*Keeper
+	Keeper
 }
 
 var _ types.QueryServer = Querier{}
@@ -494,7 +492,7 @@ func queryRedelegation(ctx sdk.Context, k Querier, req *types.QueryRedelegations
 	return redels, err
 }
 
-func queryRedelegationsFromSrcValidator(store storetypes.KVStore, k Querier, req *types.QueryRedelegationsRequest) (redels types.Redelegations, res *query.PageResponse, err error) {
+func queryRedelegationsFromSrcValidator(store sdk.KVStore, k Querier, req *types.QueryRedelegationsRequest) (redels types.Redelegations, res *query.PageResponse, err error) {
 	valAddr, err := sdk.ValAddressFromBech32(req.SrcValidatorAddr)
 	if err != nil {
 		return nil, nil, err
@@ -516,7 +514,7 @@ func queryRedelegationsFromSrcValidator(store storetypes.KVStore, k Querier, req
 	return redels, res, err
 }
 
-func queryAllRedelegations(store storetypes.KVStore, k Querier, req *types.QueryRedelegationsRequest) (redels types.Redelegations, res *query.PageResponse, err error) {
+func queryAllRedelegations(store sdk.KVStore, k Querier, req *types.QueryRedelegationsRequest) (redels types.Redelegations, res *query.PageResponse, err error) {
 	delAddr, err := sdk.AccAddressFromBech32(req.DelegatorAddr)
 	if err != nil {
 		return nil, nil, err
@@ -533,83 +531,4 @@ func queryAllRedelegations(store storetypes.KVStore, k Querier, req *types.Query
 	})
 
 	return redels, res, err
-}
-
-// util
-
-func DelegationToDelegationResponse(ctx sdk.Context, k *Keeper, del types.Delegation) (types.DelegationResponse, error) {
-	val, found := k.GetValidator(ctx, del.GetValidatorAddr())
-	if !found {
-		return types.DelegationResponse{}, types.ErrNoValidatorFound
-	}
-
-	delegatorAddress, err := sdk.AccAddressFromBech32(del.DelegatorAddress)
-	if err != nil {
-		return types.DelegationResponse{}, err
-	}
-
-	return types.NewDelegationResp(
-		delegatorAddress,
-		del.GetValidatorAddr(),
-		del.Shares,
-		sdk.NewCoin(k.BondDenom(ctx), val.TokensFromShares(del.Shares).TruncateInt()),
-	), nil
-}
-
-func DelegationsToDelegationResponses(ctx sdk.Context, k *Keeper, delegations types.Delegations) (types.DelegationResponses, error) {
-	resp := make(types.DelegationResponses, len(delegations))
-
-	for i, del := range delegations {
-		delResp, err := DelegationToDelegationResponse(ctx, k, del)
-		if err != nil {
-			return nil, err
-		}
-
-		resp[i] = delResp
-	}
-
-	return resp, nil
-}
-
-func RedelegationsToRedelegationResponses(ctx sdk.Context, k *Keeper, redels types.Redelegations) (types.RedelegationResponses, error) {
-	resp := make(types.RedelegationResponses, len(redels))
-
-	for i, redel := range redels {
-		valSrcAddr, err := sdk.ValAddressFromBech32(redel.ValidatorSrcAddress)
-		if err != nil {
-			panic(err)
-		}
-		valDstAddr, err := sdk.ValAddressFromBech32(redel.ValidatorDstAddress)
-		if err != nil {
-			panic(err)
-		}
-
-		delegatorAddress := sdk.MustAccAddressFromBech32(redel.DelegatorAddress)
-
-		val, found := k.GetValidator(ctx, valDstAddr)
-		if !found {
-			return nil, types.ErrNoValidatorFound
-		}
-
-		entryResponses := make([]types.RedelegationEntryResponse, len(redel.Entries))
-		for j, entry := range redel.Entries {
-			entryResponses[j] = types.NewRedelegationEntryResponse(
-				entry.CreationHeight,
-				entry.CompletionTime,
-				entry.SharesDst,
-				entry.InitialBalance,
-				val.TokensFromShares(entry.SharesDst).TruncateInt(),
-				entry.UnbondingId,
-			)
-		}
-
-		resp[i] = types.NewRedelegationResponse(
-			delegatorAddress,
-			valSrcAddr,
-			valDstAddr,
-			entryResponses,
-		)
-	}
-
-	return resp, nil
 }

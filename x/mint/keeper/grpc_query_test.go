@@ -4,77 +4,51 @@ import (
 	gocontext "context"
 	"testing"
 
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
-
-	storetypes "cosmossdk.io/store/types"
+	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
-	"github.com/cosmos/cosmos-sdk/testutil"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
-	"github.com/cosmos/cosmos-sdk/x/mint"
-	"github.com/cosmos/cosmos-sdk/x/mint/keeper"
-	minttestutil "github.com/cosmos/cosmos-sdk/x/mint/testutil"
 	"github.com/cosmos/cosmos-sdk/x/mint/types"
 )
 
 type MintTestSuite struct {
 	suite.Suite
 
+	app         *simapp.SimApp
 	ctx         sdk.Context
 	queryClient types.QueryClient
-	mintKeeper  keeper.Keeper
 }
 
 func (suite *MintTestSuite) SetupTest() {
-	encCfg := moduletestutil.MakeTestEncodingConfig(mint.AppModuleBasic{})
-	key := storetypes.NewKVStoreKey(types.StoreKey)
-	testCtx := testutil.DefaultContextWithDB(suite.T(), key, storetypes.NewTransientStoreKey("transient_test"))
-	suite.ctx = testCtx.Ctx
+	app := simapp.Setup(suite.T(), false)
+	ctx := app.BaseApp.NewContext(false, tmproto.Header{})
 
-	// gomock initializations
-	ctrl := gomock.NewController(suite.T())
-	accountKeeper := minttestutil.NewMockAccountKeeper(ctrl)
-	bankKeeper := minttestutil.NewMockBankKeeper(ctrl)
-	stakingKeeper := minttestutil.NewMockStakingKeeper(ctrl)
+	queryHelper := baseapp.NewQueryServerTestHelper(ctx, app.InterfaceRegistry())
+	types.RegisterQueryServer(queryHelper, app.MintKeeper)
+	queryClient := types.NewQueryClient(queryHelper)
 
-	accountKeeper.EXPECT().GetModuleAddress("mint").Return(sdk.AccAddress{})
+	suite.app = app
+	suite.ctx = ctx
 
-	suite.mintKeeper = keeper.NewKeeper(
-		encCfg.Codec,
-		key,
-		stakingKeeper,
-		accountKeeper,
-		bankKeeper,
-		authtypes.FeeCollectorName,
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
-	)
-
-	err := suite.mintKeeper.SetParams(suite.ctx, types.DefaultParams())
-	suite.Require().NoError(err)
-	suite.mintKeeper.SetMinter(suite.ctx, types.DefaultInitialMinter())
-
-	queryHelper := baseapp.NewQueryServerTestHelper(testCtx.Ctx, encCfg.InterfaceRegistry)
-	types.RegisterQueryServer(queryHelper, suite.mintKeeper)
-
-	suite.queryClient = types.NewQueryClient(queryHelper)
+	suite.queryClient = queryClient
 }
 
 func (suite *MintTestSuite) TestGRPCParams() {
-	params, err := suite.queryClient.Params(gocontext.Background(), &types.QueryParamsRequest{})
-	suite.Require().NoError(err)
-	suite.Require().Equal(params.Params, suite.mintKeeper.GetParams(suite.ctx))
+	app, ctx, queryClient := suite.app, suite.ctx, suite.queryClient
 
-	inflation, err := suite.queryClient.Inflation(gocontext.Background(), &types.QueryInflationRequest{})
+	params, err := queryClient.Params(gocontext.Background(), &types.QueryParamsRequest{})
 	suite.Require().NoError(err)
-	suite.Require().Equal(inflation.Inflation, suite.mintKeeper.GetMinter(suite.ctx).Inflation)
+	suite.Require().Equal(params.Params, app.MintKeeper.GetParams(ctx))
 
-	annualProvisions, err := suite.queryClient.AnnualProvisions(gocontext.Background(), &types.QueryAnnualProvisionsRequest{})
+	inflation, err := queryClient.Inflation(gocontext.Background(), &types.QueryInflationRequest{})
 	suite.Require().NoError(err)
-	suite.Require().Equal(annualProvisions.AnnualProvisions, suite.mintKeeper.GetMinter(suite.ctx).AnnualProvisions)
+	suite.Require().Equal(inflation.Inflation, app.MintKeeper.GetMinter(ctx).Inflation)
+
+	annualProvisions, err := queryClient.AnnualProvisions(gocontext.Background(), &types.QueryAnnualProvisionsRequest{})
+	suite.Require().NoError(err)
+	suite.Require().Equal(annualProvisions.AnnualProvisions, app.MintKeeper.GetMinter(ctx).AnnualProvisions)
 }
 
 func TestMintTestSuite(t *testing.T) {

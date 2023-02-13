@@ -1,8 +1,6 @@
 package ante
 
 import (
-	storetypes "cosmossdk.io/store/types"
-
 	"github.com/cosmos/cosmos-sdk/codec/legacy"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/multisig"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
@@ -55,15 +53,14 @@ func (vmd ValidateMemoDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate
 		return ctx, sdkerrors.Wrap(sdkerrors.ErrTxDecode, "invalid transaction type")
 	}
 
+	params := vmd.ak.GetParams(ctx)
+
 	memoLength := len(memoTx.GetMemo())
-	if memoLength > 0 {
-		params := vmd.ak.GetParams(ctx)
-		if uint64(memoLength) > params.MaxMemoCharacters {
-			return ctx, sdkerrors.Wrapf(sdkerrors.ErrMemoTooLarge,
-				"maximum number of characters is %d but received %d characters",
-				params.MaxMemoCharacters, memoLength,
-			)
-		}
+	if uint64(memoLength) > params.MaxMemoCharacters {
+		return ctx, sdkerrors.Wrapf(sdkerrors.ErrMemoTooLarge,
+			"maximum number of characters is %d but received %d characters",
+			params.MaxMemoCharacters, memoLength,
+		)
 	}
 
 	return next(ctx, tx, simulate)
@@ -95,7 +92,7 @@ func (cgts ConsumeTxSizeGasDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, sim
 	}
 	params := cgts.ak.GetParams(ctx)
 
-	ctx.GasMeter().ConsumeGas(params.TxSizeCostPerByte*storetypes.Gas(len(ctx.TxBytes())), "txSize")
+	ctx.GasMeter().ConsumeGas(params.TxSizeCostPerByte*sdk.Gas(len(ctx.TxBytes())), "txSize")
 
 	// simulate gas cost for signatures in simulate mode
 	if simulate {
@@ -124,13 +121,13 @@ func (cgts ConsumeTxSizeGasDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, sim
 			}
 
 			// use stdsignature to mock the size of a full signature
-			simSig := legacytx.StdSignature{ //nolint:staticcheck // SA1019: legacytx.StdSignature is deprecated
+			simSig := legacytx.StdSignature{ //nolint:staticcheck // this will be removed when proto is ready
 				Signature: simSecp256k1Sig[:],
 				PubKey:    pubkey,
 			}
 
 			sigBz := legacy.Cdc.MustMarshal(simSig)
-			cost := storetypes.Gas(len(sigBz) + 6)
+			cost := sdk.Gas(len(sigBz) + 6)
 
 			// If the pubkey is a multi-signature pubkey, then we estimate for the maximum
 			// number of signers.

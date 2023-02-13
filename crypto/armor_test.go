@@ -7,13 +7,11 @@ import (
 	"io"
 	"testing"
 
-	cmtcrypto "github.com/cometbft/cometbft/crypto"
-	"github.com/cometbft/cometbft/crypto/xsalsa20symmetric"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	tmcrypto "github.com/tendermint/tendermint/crypto"
+	"github.com/tendermint/tendermint/crypto/xsalsa20symmetric"
 
-	"cosmossdk.io/depinject"
-	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/codec/legacy"
 	"github.com/cosmos/cosmos-sdk/crypto"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
@@ -21,8 +19,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/keys/bcrypt"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
-	_ "github.com/cosmos/cosmos-sdk/runtime"
-	"github.com/cosmos/cosmos-sdk/testutil/configurator"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	"github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -51,10 +48,10 @@ func TestArmorUnarmorPrivKey(t *testing.T) {
 
 	// armor key manually
 	encryptPrivKeyFn := func(privKey cryptotypes.PrivKey, passphrase string) (saltBytes []byte, encBytes []byte) {
-		saltBytes = cmtcrypto.CRandBytes(16)
+		saltBytes = tmcrypto.CRandBytes(16)
 		key, err := bcrypt.GenerateFromPassword(saltBytes, []byte(passphrase), crypto.BcryptSecurityParameter)
 		require.NoError(t, err)
-		key = cmtcrypto.Sha256(key) // get 32 bytes
+		key = tmcrypto.Sha256(key) // get 32 bytes
 		privKeyBytes := legacy.Cdc.Amino.MustMarshalBinaryBare(privKey)
 		return saltBytes, xsalsa20symmetric.EncryptSymmetric(privKeyBytes, key)
 	}
@@ -74,11 +71,8 @@ func TestArmorUnarmorPrivKey(t *testing.T) {
 
 func TestArmorUnarmorPubKey(t *testing.T) {
 	// Select the encryption and storage for your cryptostore
-	var cdc codec.Codec
-	err := depinject.Inject(configurator.NewAppConfig(), &cdc)
-	require.NoError(t, err)
-
-	cstore := keyring.NewInMemory(cdc)
+	encCfg := simapp.MakeTestEncodingConfig()
+	cstore := keyring.NewInMemory(encCfg.Codec)
 
 	// Add keys and see they return in alphabetical order
 	k, _, err := cstore.NewMnemonic("Bob", keyring.English, types.FullFundraiserPath, keyring.DefaultBIP39Passphrase, hd.Secp256k1)
@@ -173,7 +167,7 @@ func BenchmarkBcryptGenerateFromPassword(b *testing.B) {
 		param := securityParam
 		b.Run(fmt.Sprintf("benchmark-security-param-%d", param), func(b *testing.B) {
 			b.ReportAllocs()
-			saltBytes := cmtcrypto.CRandBytes(16)
+			saltBytes := tmcrypto.CRandBytes(16)
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				_, err := bcrypt.GenerateFromPassword(saltBytes, passphrase, param)

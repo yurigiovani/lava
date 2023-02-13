@@ -2,6 +2,7 @@ package v1beta1
 
 import (
 	"cosmossdk.io/math"
+	"sigs.k8s.io/yaml"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -10,8 +11,8 @@ import (
 type ValidatorGovInfo struct {
 	Address             sdk.ValAddress      // address of the validator operator
 	BondedTokens        math.Int            // Power of a Validator
-	DelegatorShares     math.LegacyDec      // Total outstanding delegator shares
-	DelegatorDeductions math.LegacyDec      // Delegator deductions from validator's delegators voting independently
+	DelegatorShares     sdk.Dec             // Total outstanding delegator shares
+	DelegatorDeductions sdk.Dec             // Delegator deductions from validator's delegators voting independently
 	Vote                WeightedVoteOptions // Vote of the validator
 }
 
@@ -50,7 +51,7 @@ func NewTallyResultFromMap(results map[VoteOption]sdk.Dec) TallyResult {
 
 // EmptyTallyResult returns an empty TallyResult.
 func EmptyTallyResult() TallyResult {
-	return NewTallyResult(math.ZeroInt(), math.ZeroInt(), math.ZeroInt(), math.ZeroInt())
+	return NewTallyResult(sdk.ZeroInt(), sdk.ZeroInt(), sdk.ZeroInt(), sdk.ZeroInt())
 }
 
 // Equals returns if two proposals are equal.
@@ -59,4 +60,10 @@ func (tr TallyResult) Equals(comp TallyResult) bool {
 		tr.Abstain.Equal(comp.Abstain) &&
 		tr.No.Equal(comp.No) &&
 		tr.NoWithVeto.Equal(comp.NoWithVeto)
+}
+
+// String implements stringer interface
+func (tr TallyResult) String() string {
+	out, _ := yaml.Marshal(tr)
+	return string(out)
 }

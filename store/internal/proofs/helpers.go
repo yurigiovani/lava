@@ -3,18 +3,17 @@ package proofs
 import (
 	"sort"
 
-	"github.com/cometbft/cometbft/libs/rand"
-	cmtprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
-	"golang.org/x/exp/maps"
+	"github.com/tendermint/tendermint/libs/rand"
+	tmcrypto "github.com/tendermint/tendermint/proto/tendermint/crypto"
 
-	sdkmaps "cosmossdk.io/store/internal/maps"
+	sdkmaps "github.com/cosmos/cosmos-sdk/store/internal/maps"
 )
 
 // SimpleResult contains a merkle.SimpleProof along with all data needed to build the confio/proof
 type SimpleResult struct {
 	Key      []byte
 	Value    []byte
-	Proof    *cmtprotocrypto.Proof
+	Proof    *tmcrypto.Proof
 	RootHash []byte
 }
 
@@ -47,7 +46,12 @@ const (
 )
 
 func SortedKeys(data map[string][]byte) []string {
-	keys := maps.Keys(data)
+	keys := make([]string, len(data))
+	i := 0
+	for k := range data {
+		keys[i] = k
+		i++
+	}
 	sort.Strings(keys)
 	return keys
 }

@@ -1,7 +1,7 @@
 package codec
 
 import (
-	"github.com/cosmos/gogoproto/proto"
+	"github.com/gogo/protobuf/proto"
 	"sigs.k8s.io/yaml"
 )
 

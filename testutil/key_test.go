@@ -7,13 +7,13 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	"github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 )
 
 func TestGenerateCoinKey(t *testing.T) {
 	t.Parallel()
-	cdc := testutil.MakeTestEncodingConfig().Codec
+	cdc := simapp.MakeTestEncodingConfig().Codec
 	addr, mnemonic, err := GenerateCoinKey(hd.Secp256k1, cdc)
 	require.NoError(t, err)
 
@@ -28,7 +28,7 @@ func TestGenerateCoinKey(t *testing.T) {
 func TestGenerateSaveCoinKey(t *testing.T) {
 	t.Parallel()
 
-	encCfg := testutil.MakeTestEncodingConfig()
+	encCfg := simapp.MakeTestEncodingConfig()
 	kb, err := keyring.New(t.Name(), "test", t.TempDir(), nil, encCfg.Codec)
 	require.NoError(t, err)
 
@@ -53,7 +53,7 @@ func TestGenerateSaveCoinKey(t *testing.T) {
 func TestGenerateSaveCoinKeyOverwriteFlag(t *testing.T) {
 	t.Parallel()
 
-	encCfg := testutil.MakeTestEncodingConfig()
+	encCfg := simapp.MakeTestEncodingConfig()
 	kb, err := keyring.New(t.Name(), "test", t.TempDir(), nil, encCfg.Codec)
 	require.NoError(t, err)
 

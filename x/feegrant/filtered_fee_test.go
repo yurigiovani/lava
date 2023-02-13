@@ -4,27 +4,22 @@ import (
 	"testing"
 	"time"
 
-	ocproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	ocproto "github.com/tendermint/tendermint/proto/tendermint/types"
 
-	storetypes "cosmossdk.io/store/types"
-	"cosmossdk.io/x/feegrant"
-	"cosmossdk.io/x/feegrant/module"
-
-	"github.com/cosmos/cosmos-sdk/testutil"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	"github.com/cosmos/cosmos-sdk/x/feegrant"
 )
 
 func TestFilteredFeeValidAllow(t *testing.T) {
-	key := storetypes.NewKVStoreKey(feegrant.StoreKey)
-	testCtx := testutil.DefaultContextWithDB(t, key, storetypes.NewTransientStoreKey("transient_test"))
-	encCfg := moduletestutil.MakeTestEncodingConfig(module.AppModuleBasic{})
+	app := simapp.Setup(t, false)
 
-	ctx := testCtx.Ctx.WithBlockHeader(ocproto.Header{Time: time.Now()})
-
+	ctx := app.BaseApp.NewContext(false, ocproto.Header{
+		Time: time.Now(),
+	})
 	eth := sdk.NewCoins(sdk.NewInt64Coin("eth", 10))
 	atom := sdk.NewCoins(sdk.NewInt64Coin("atom", 555))
 	smallAtom := sdk.NewCoins(sdk.NewInt64Coin("atom", 43))
@@ -140,7 +135,7 @@ func TestFilteredFeeValidAllow(t *testing.T) {
 			err := tc.allowance.ValidateBasic()
 			require.NoError(t, err)
 
-			ctx := testCtx.Ctx.WithBlockTime(tc.blockTime)
+			ctx := app.BaseApp.NewContext(false, ocproto.Header{}).WithBlockTime(tc.blockTime)
 
 			// create grant
 			var granter, grantee sdk.AccAddress
@@ -172,12 +167,13 @@ func TestFilteredFeeValidAllow(t *testing.T) {
 				require.NoError(t, err)
 
 				// save the grant
-				bz, err := encCfg.Codec.Marshal(&newGrant)
+				cdc := simapp.MakeTestEncodingConfig().Codec
+				bz, err := cdc.Marshal(&newGrant)
 				require.NoError(t, err)
 
 				// load the grant
 				var loadedGrant feegrant.Grant
-				err = encCfg.Codec.Unmarshal(bz, &loadedGrant)
+				err = cdc.Unmarshal(bz, &loadedGrant)
 				require.NoError(t, err)
 
 				newAllowance, err := loadedGrant.GetGrant()

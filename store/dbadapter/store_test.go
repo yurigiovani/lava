@@ -5,13 +5,14 @@ import (
 	"errors"
 	"testing"
 
-	"cosmossdk.io/store/cachekv"
-	"cosmossdk.io/store/dbadapter"
-	"cosmossdk.io/store/mock"
-	"cosmossdk.io/store/types"
+	"github.com/cosmos/cosmos-sdk/store/cachekv"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cosmos/cosmos-sdk/store/dbadapter"
+	"github.com/cosmos/cosmos-sdk/store/types"
+	"github.com/cosmos/cosmos-sdk/tests/mocks"
 )
 
 var errFoo = errors.New("dummy")
@@ -20,7 +21,7 @@ func TestAccessors(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
-	mockDB := mock.NewMockDB(mockCtrl)
+	mockDB := mocks.NewMockDB(mockCtrl)
 	store := dbadapter.Store{mockDB}
 	key := []byte("test")
 	value := []byte("testvalue")
@@ -75,7 +76,7 @@ func TestAccessors(t *testing.T) {
 
 func TestCacheWraps(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
-	mockDB := mock.NewMockDB(mockCtrl)
+	mockDB := mocks.NewMockDB(mockCtrl)
 	store := dbadapter.Store{mockDB}
 
 	cacheWrapper := store.CacheWrap()

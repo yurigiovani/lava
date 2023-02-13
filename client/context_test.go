@@ -2,6 +2,7 @@ package client_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"strings"
@@ -16,8 +17,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/cosmos/cosmos-sdk/testutil/network"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
-	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 )
 
 func TestMain(m *testing.M) {
@@ -46,7 +47,7 @@ func TestContext_PrintProto(t *testing.T) {
 	// json
 	buf := &bytes.Buffer{}
 	ctx = ctx.WithOutput(buf)
-	ctx.OutputFormat = "json" //nolint:goconst
+	ctx.OutputFormat = "json"
 	err = ctx.PrintProto(hasAnimal)
 	require.NoError(t, err)
 	require.Equal(t,
@@ -56,7 +57,7 @@ func TestContext_PrintProto(t *testing.T) {
 	// yaml
 	buf = &bytes.Buffer{}
 	ctx = ctx.WithOutput(buf)
-	ctx.OutputFormat = "text" //nolint:goconst
+	ctx.OutputFormat = "text"
 	err = ctx.PrintProto(hasAnimal)
 	require.NoError(t, err)
 	require.Equal(t,
@@ -143,8 +144,22 @@ x: "10"
 `, buf.String())
 }
 
+func TestCLIQueryConn(t *testing.T) {
+	cfg := network.DefaultConfig()
+	cfg.NumValidators = 1
+
+	n, err := network.New(t, t.TempDir(), cfg)
+	require.NoError(t, err)
+	defer n.Cleanup()
+
+	testClient := testdata.NewQueryClient(n.Validators[0].ClientCtx)
+	res, err := testClient.Echo(context.Background(), &testdata.EchoRequest{Message: "hello"})
+	require.NoError(t, err)
+	require.Equal(t, "hello", res.Message)
+}
+
 func TestGetFromFields(t *testing.T) {
-	cfg := testutil.MakeTestEncodingConfig()
+	cfg := network.DefaultConfig()
 	path := hd.CreateHDPath(118, 0, 0).String()
 
 	testCases := []struct {

@@ -7,8 +7,7 @@ import (
 	"time"
 	"unsafe"
 
-	sdkmath "cosmossdk.io/math"
-
+	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -22,7 +21,7 @@ const (
 // shamelessly copied from
 // https://stackoverflow.com/questions/22892120/how-to-generate-a-random-string-of-a-fixed-length-in-golang#31832326
 
-// RandStringOfLength generates a random string of a particular length.
+// RandStringOfLength generates a random string of a particular length
 func RandStringOfLength(r *rand.Rand, n int) string {
 	b := make([]byte, n)
 	// A src.Int63() generates 63 random bits, enough for letterIdxMax characters!
@@ -41,20 +40,20 @@ func RandStringOfLength(r *rand.Rand, n int) string {
 	return *(*string)(unsafe.Pointer(&b))
 }
 
-// RandPositiveInt get a rand positive math.Int
-func RandPositiveInt(r *rand.Rand, max sdkmath.Int) (sdkmath.Int, error) {
-	if !max.GTE(sdkmath.OneInt()) {
-		return sdkmath.Int{}, errors.New("max too small")
+// RandPositiveInt get a rand positive sdk.Int
+func RandPositiveInt(r *rand.Rand, max math.Int) (math.Int, error) {
+	if !max.GTE(sdk.OneInt()) {
+		return math.Int{}, errors.New("max too small")
 	}
 
-	max = max.Sub(sdkmath.OneInt())
+	max = max.Sub(sdk.OneInt())
 
-	return sdkmath.NewIntFromBigInt(new(big.Int).Rand(r, max.BigInt())).Add(sdkmath.OneInt()), nil
+	return sdk.NewIntFromBigInt(new(big.Int).Rand(r, max.BigInt())).Add(sdk.OneInt()), nil
 }
 
 // RandomAmount generates a random amount
 // Note: The range of RandomAmount includes max, and is, in fact, biased to return max as well as 0.
-func RandomAmount(r *rand.Rand, max sdkmath.Int) sdkmath.Int {
+func RandomAmount(r *rand.Rand, max math.Int) math.Int {
 	randInt := big.NewInt(0)
 
 	switch r.Intn(10) {
@@ -66,12 +65,12 @@ func RandomAmount(r *rand.Rand, max sdkmath.Int) sdkmath.Int {
 		randInt = big.NewInt(0).Rand(r, max.BigInt()) // up to max - 1
 	}
 
-	return sdkmath.NewIntFromBigInt(randInt)
+	return sdk.NewIntFromBigInt(randInt)
 }
 
 // RandomDecAmount generates a random decimal amount
 // Note: The range of RandomDecAmount includes max, and is, in fact, biased to return max as well as 0.
-func RandomDecAmount(r *rand.Rand, max sdkmath.LegacyDec) sdkmath.LegacyDec {
+func RandomDecAmount(r *rand.Rand, max sdk.Dec) sdk.Dec {
 	randInt := big.NewInt(0)
 
 	switch r.Intn(10) {
@@ -83,7 +82,7 @@ func RandomDecAmount(r *rand.Rand, max sdkmath.LegacyDec) sdkmath.LegacyDec {
 		randInt = big.NewInt(0).Rand(r, max.BigInt())
 	}
 
-	return sdkmath.LegacyNewDecFromBigIntWithPrec(randInt, sdkmath.LegacyPrecision)
+	return sdk.NewDecFromBigIntWithPrec(randInt, sdk.Precision)
 }
 
 // RandTimestamp generates a random timestamp

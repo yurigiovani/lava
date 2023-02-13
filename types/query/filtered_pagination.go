@@ -3,10 +3,8 @@ package query
 import (
 	"fmt"
 
-	"cosmossdk.io/store/types"
-	proto "github.com/cosmos/gogoproto/proto"
-
 	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/store/types"
 )
 
 // FilteredPaginate does pagination of all the results in the PrefixStore based on the
@@ -130,7 +128,7 @@ func FilteredPaginate(
 // If offset is used, the pagination uses lazy filtering i.e., searches through all the records.
 // The resulting slice (of type F) can be of a different type than the one being iterated through
 // (type T), so it's possible to do any necessary transformation inside the onResult function.
-func GenericFilteredPaginate[T, F proto.Message](
+func GenericFilteredPaginate[T codec.ProtoMarshaler, F codec.ProtoMarshaler](
 	cdc codec.BinaryCodec,
 	prefixStore types.KVStore,
 	pageRequest *PageRequest,
@@ -191,7 +189,7 @@ func GenericFilteredPaginate[T, F proto.Message](
 				return nil, nil, err
 			}
 
-			if proto.Size(val) != 0 {
+			if val.Size() != 0 {
 				results = append(results, val)
 				numHits++
 			}
@@ -229,7 +227,7 @@ func GenericFilteredPaginate[T, F proto.Message](
 			return nil, nil, err
 		}
 
-		if proto.Size(val) != 0 {
+		if val.Size() != 0 {
 			// Previously this was the "accumulate" flag
 			if numHits >= offset && numHits < end {
 				results = append(results, val)

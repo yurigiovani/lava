@@ -7,10 +7,10 @@ import (
 	"errors"
 	"fmt"
 
-	btcec "github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
-	"github.com/cometbft/cometbft/crypto"
 	"github.com/cosmos/go-bip39"
+	"github.com/tendermint/tendermint/crypto"
 
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	csecp256k1 "github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
@@ -22,11 +22,9 @@ import (
 // set the discoverLedger function which is responsible for loading the Ledger
 // device at runtime or returning an error.
 func init() {
-	options.discoverLedger = func() (SECP256K1, error) {
+	discoverLedger = func() (SECP256K1, error) {
 		return LedgerSECP256K1Mock{}, nil
 	}
-
-	initOptionsDefault()
 }
 
 type LedgerSECP256K1Mock struct{}
@@ -80,13 +78,13 @@ func (mock LedgerSECP256K1Mock) GetAddressPubKeySECP256K1(derivationPath []uint3
 	compressedPublicKey := make([]byte, csecp256k1.PubKeySize)
 	copy(compressedPublicKey, cmp.SerializeCompressed())
 
-	// Generate the bech32 addr using existing cmtcrypto/etc.
+	// Generate the bech32 addr using existing tmcrypto/etc.
 	pub := &csecp256k1.PubKey{Key: compressedPublicKey}
 	addr := sdk.AccAddress(pub.Address()).String()
 	return pk, addr, err
 }
 
-func (mock LedgerSECP256K1Mock) SignSECP256K1(derivationPath []uint32, message []byte, p2 byte) ([]byte, error) {
+func (mock LedgerSECP256K1Mock) SignSECP256K1(derivationPath []uint32, message []byte) ([]byte, error) {
 	path := hd.NewParams(derivationPath[0], derivationPath[1], derivationPath[2], derivationPath[3] != 0, derivationPath[4])
 	seed, err := bip39.NewSeedWithErrorChecking(testdata.TestMnemonic, "")
 	if err != nil {

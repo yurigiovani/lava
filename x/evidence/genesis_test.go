@@ -5,18 +5,16 @@ import (
 	"testing"
 	"time"
 
-	"cosmossdk.io/x/evidence"
-	"cosmossdk.io/x/evidence/exported"
-	"cosmossdk.io/x/evidence/keeper"
-	"cosmossdk.io/x/evidence/testutil"
-	"cosmossdk.io/x/evidence/types"
-	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
-	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
-	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/x/evidence"
+	"github.com/cosmos/cosmos-sdk/x/evidence/exported"
+	"github.com/cosmos/cosmos-sdk/x/evidence/keeper"
+	"github.com/cosmos/cosmos-sdk/x/evidence/types"
 )
 
 type GenesisTestSuite struct {
@@ -27,13 +25,11 @@ type GenesisTestSuite struct {
 }
 
 func (suite *GenesisTestSuite) SetupTest() {
-	var evidenceKeeper keeper.Keeper
+	checkTx := false
+	app := simapp.Setup(suite.T(), checkTx)
 
-	app, err := simtestutil.Setup(testutil.AppConfig, &evidenceKeeper)
-	require.NoError(suite.T(), err)
-
-	suite.ctx = app.BaseApp.NewContext(false, cmtproto.Header{Height: 1})
-	suite.keeper = evidenceKeeper
+	suite.ctx = app.BaseApp.NewContext(checkTx, tmproto.Header{Height: 1})
+	suite.keeper = app.EvidenceKeeper
 }
 
 func (suite *GenesisTestSuite) TestInitGenesis() {

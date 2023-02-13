@@ -7,11 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"cosmossdk.io/math"
-	"github.com/golang/mock/gomock"
-	"github.com/stretchr/testify/require"
+	"github.com/cosmos/cosmos-sdk/x/bank/testutil"
+	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
 
-	storetypes "cosmossdk.io/store/types"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	kmultisig "github.com/cosmos/cosmos-sdk/crypto/keys/multisig"
@@ -22,38 +21,32 @@ import (
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	"github.com/cosmos/cosmos-sdk/x/auth/ante"
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	"github.com/cosmos/cosmos-sdk/x/auth/types"
 )
 
 // Test that simulate transaction accurately estimates gas cost
-func TestSimulateGasCost(t *testing.T) {
-	// This test has a test case that uses another's output.
-	var simulatedGas uint64
+func (suite *AnteTestSuite) TestSimulateGasCost() {
+	suite.SetupTest(false) // reset
 
-	// Same data for every test case
+	// Same data for every test cases
+	accounts := suite.CreateTestAccounts(3)
+	msgs := []sdk.Msg{
+		testdata.NewTestMsg(accounts[0].acc.GetAddress(), accounts[1].acc.GetAddress()),
+		testdata.NewTestMsg(accounts[2].acc.GetAddress(), accounts[0].acc.GetAddress()),
+		testdata.NewTestMsg(accounts[1].acc.GetAddress(), accounts[2].acc.GetAddress()),
+	}
 	feeAmount := testdata.NewTestFeeAmount()
+	gasLimit := testdata.NewTestGasLimit()
+	accSeqs := []uint64{0, 0, 0}
+	privs := []cryptotypes.PrivKey{accounts[0].priv, accounts[1].priv, accounts[2].priv}
+	accNums := []uint64{0, 1, 2}
 
 	testCases := []TestCase{
 		{
 			"tx with 150atom fee",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(3)
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), accs[0].acc.GetAddress(), authtypes.FeeCollectorName, feeAmount).Return(nil)
-
-				msgs := []sdk.Msg{
-					testdata.NewTestMsg(accs[0].acc.GetAddress(), accs[1].acc.GetAddress()),
-					testdata.NewTestMsg(accs[2].acc.GetAddress(), accs[0].acc.GetAddress()),
-					testdata.NewTestMsg(accs[1].acc.GetAddress(), accs[2].acc.GetAddress()),
-				}
-
-				return TestCaseArgs{
-					accNums:   []uint64{0, 1, 2},
-					accSeqs:   []uint64{0, 0, 0},
-					feeAmount: feeAmount,
-					gasLimit:  testdata.NewTestGasLimit(),
-					msgs:      msgs,
-					privs:     []cryptotypes.PrivKey{accs[0].priv, accs[1].priv, accs[2].priv},
-				}
+			func() {
+				suite.txBuilder.SetFeeAmount(feeAmount)
+				suite.txBuilder.SetGasLimit(gasLimit)
 			},
 			true,
 			true,
@@ -61,24 +54,12 @@ func TestSimulateGasCost(t *testing.T) {
 		},
 		{
 			"with previously estimated gas",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(3)
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), accs[0].acc.GetAddress(), authtypes.FeeCollectorName, feeAmount).Return(nil)
+			func() {
+				simulatedGas := suite.ctx.GasMeter().GasConsumed()
 
-				msgs := []sdk.Msg{
-					testdata.NewTestMsg(accs[0].acc.GetAddress(), accs[1].acc.GetAddress()),
-					testdata.NewTestMsg(accs[2].acc.GetAddress(), accs[0].acc.GetAddress()),
-					testdata.NewTestMsg(accs[1].acc.GetAddress(), accs[2].acc.GetAddress()),
-				}
-
-				return TestCaseArgs{
-					accNums:   []uint64{0, 1, 2},
-					accSeqs:   []uint64{0, 0, 0},
-					feeAmount: feeAmount,
-					gasLimit:  simulatedGas,
-					msgs:      msgs,
-					privs:     []cryptotypes.PrivKey{accs[0].priv, accs[1].priv, accs[2].priv},
-				}
+				accSeqs = []uint64{1, 1, 1}
+				suite.txBuilder.SetFeeAmount(feeAmount)
+				suite.txBuilder.SetGasLimit(simulatedGas)
 			},
 			false,
 			true,
@@ -87,22 +68,20 @@ func TestSimulateGasCost(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("Case %s", tc.desc), func(t *testing.T) {
-			suite := SetupTestSuite(t, false)
+		suite.Run(fmt.Sprintf("Case %s", tc.desc), func() {
 			suite.txBuilder = suite.clientCtx.TxConfig.NewTxBuilder()
-			args := tc.malleate(suite)
-			args.chainID = suite.ctx.ChainID()
-			suite.RunTestCase(t, tc, args)
+			tc.malleate()
 
-			// Gather info for the next test case
-			simulatedGas = suite.ctx.GasMeter().GasConsumed()
+			suite.RunTestCase(privs, msgs, feeAmount, gasLimit, accNums, accSeqs, suite.ctx.ChainID(), tc)
 		})
 	}
 }
 
 // Test various error cases in the AnteHandler control flow.
-func TestAnteHandlerSigErrors(t *testing.T) {
-	// This test requires the accounts to not be set, so we create them here
+func (suite *AnteTestSuite) TestAnteHandlerSigErrors() {
+	suite.SetupTest(false) // reset
+
+	// Same data for every test cases
 	priv0, _, addr0 := testdata.KeyTestPubAddr()
 	priv1, _, addr1 := testdata.KeyTestPubAddr()
 	priv2, _, addr2 := testdata.KeyTestPubAddr()
@@ -110,28 +89,29 @@ func TestAnteHandlerSigErrors(t *testing.T) {
 		testdata.NewTestMsg(addr0, addr1),
 		testdata.NewTestMsg(addr0, addr2),
 	}
+	feeAmount := testdata.NewTestFeeAmount()
+	gasLimit := testdata.NewTestGasLimit()
+
+	// Variable data per test case
+	var (
+		privs   []cryptotypes.PrivKey
+		accNums []uint64
+		accSeqs []uint64
+	)
 
 	testCases := []TestCase{
 		{
 			"check no signatures fails",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				privs, accNums, accSeqs := []cryptotypes.PrivKey{}, []uint64{}, []uint64{}
+			func() {
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{}, []uint64{}, []uint64{}
 
 				// Create tx manually to test the tx's signers
-				require.NoError(t, suite.txBuilder.SetMsgs(msgs...))
-				tx, err := suite.CreateTestTx(suite.ctx, privs, accNums, accSeqs, suite.ctx.ChainID(), signing.SignMode_SIGN_MODE_DIRECT)
-				require.NoError(t, err)
-
+				suite.Require().NoError(suite.txBuilder.SetMsgs(msgs...))
+				tx, err := suite.CreateTestTx(privs, accNums, accSeqs, suite.ctx.ChainID())
+				suite.Require().NoError(err)
 				// tx.GetSigners returns addresses in correct order: addr1, addr2, addr3
 				expectedSigners := []sdk.AccAddress{addr0, addr1, addr2}
-				require.Equal(t, expectedSigners, tx.GetSigners())
-
-				return TestCaseArgs{
-					accNums: accNums,
-					accSeqs: accSeqs,
-					msgs:    msgs,
-					privs:   privs,
-				}
+				suite.Require().Equal(expectedSigners, tx.GetSigners())
 			},
 			false,
 			false,
@@ -139,15 +119,8 @@ func TestAnteHandlerSigErrors(t *testing.T) {
 		},
 		{
 			"num sigs dont match GetSigners",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				privs, accNums, accSeqs := []cryptotypes.PrivKey{priv0}, []uint64{0}, []uint64{0}
-
-				return TestCaseArgs{
-					accNums: accNums,
-					accSeqs: accSeqs,
-					msgs:    msgs,
-					privs:   privs,
-				}
+			func() {
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{priv0}, []uint64{0}, []uint64{0}
 			},
 			false,
 			false,
@@ -155,15 +128,8 @@ func TestAnteHandlerSigErrors(t *testing.T) {
 		},
 		{
 			"unrecognized account",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				privs, accNums, accSeqs := []cryptotypes.PrivKey{priv0, priv1, priv2}, []uint64{0, 1, 2}, []uint64{0, 0, 0}
-
-				return TestCaseArgs{
-					accNums: accNums,
-					accSeqs: accSeqs,
-					msgs:    msgs,
-					privs:   privs,
-				}
+			func() {
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{priv0, priv1, priv2}, []uint64{0, 1, 2}, []uint64{0, 0, 0}
 			},
 			false,
 			false,
@@ -171,76 +137,55 @@ func TestAnteHandlerSigErrors(t *testing.T) {
 		},
 		{
 			"save the first account, but second is still unrecognized",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				suite.accountKeeper.SetAccount(suite.ctx, suite.accountKeeper.NewAccountWithAddress(suite.ctx, addr0))
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-
-				privs, accNums, accSeqs := []cryptotypes.PrivKey{priv0, priv1, priv2}, []uint64{0, 1, 2}, []uint64{0, 0, 0}
-
-				return TestCaseArgs{
-					accNums: accNums,
-					accSeqs: accSeqs,
-					msgs:    msgs,
-					privs:   privs,
-				}
+			func() {
+				acc1 := suite.app.AccountKeeper.NewAccountWithAddress(suite.ctx, addr0)
+				suite.app.AccountKeeper.SetAccount(suite.ctx, acc1)
+				err := suite.app.BankKeeper.MintCoins(suite.ctx, minttypes.ModuleName, feeAmount)
+				suite.Require().NoError(err)
+				err = suite.app.BankKeeper.SendCoinsFromModuleToAccount(suite.ctx, minttypes.ModuleName, addr0, feeAmount)
+				suite.Require().NoError(err)
 			},
 			false,
 			false,
 			sdkerrors.ErrUnknownAddress,
 		},
-		{
-			"save all the accounts, should pass",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				suite.accountKeeper.SetAccount(suite.ctx, suite.accountKeeper.NewAccountWithAddress(suite.ctx, addr0))
-				suite.accountKeeper.SetAccount(suite.ctx, suite.accountKeeper.NewAccountWithAddress(suite.ctx, addr1))
-				suite.accountKeeper.SetAccount(suite.ctx, suite.accountKeeper.NewAccountWithAddress(suite.ctx, addr2))
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-
-				privs, accNums, accSeqs := []cryptotypes.PrivKey{priv0, priv1, priv2}, []uint64{1, 2, 3}, []uint64{0, 0, 0}
-
-				return TestCaseArgs{
-					accNums: accNums,
-					accSeqs: accSeqs,
-					msgs:    msgs,
-					privs:   privs,
-				}
-			},
-			false,
-			true,
-			nil,
-		},
 	}
 
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("Case %s", tc.desc), func(t *testing.T) {
-			suite := SetupTestSuite(t, false)
+		suite.Run(fmt.Sprintf("Case %s", tc.desc), func() {
 			suite.txBuilder = suite.clientCtx.TxConfig.NewTxBuilder()
-			args := tc.malleate(suite)
-			args.chainID = suite.ctx.ChainID()
-			args.feeAmount = testdata.NewTestFeeAmount()
-			args.gasLimit = testdata.NewTestGasLimit()
+			tc.malleate()
 
-			suite.RunTestCase(t, tc, args)
+			suite.RunTestCase(privs, msgs, feeAmount, gasLimit, accNums, accSeqs, suite.ctx.ChainID(), tc)
 		})
 	}
 }
 
 // Test logic around account number checking with one signer and many signers.
-func TestAnteHandlerAccountNumbers(t *testing.T) {
+func (suite *AnteTestSuite) TestAnteHandlerAccountNumbers() {
+	suite.SetupTest(false) // reset
+
+	// Same data for every test cases
+	accounts := suite.CreateTestAccounts(2)
+	feeAmount := testdata.NewTestFeeAmount()
+	gasLimit := testdata.NewTestGasLimit()
+
+	// Variable data per test case
+	var (
+		accNums []uint64
+		msgs    []sdk.Msg
+		privs   []cryptotypes.PrivKey
+		accSeqs []uint64
+	)
+
 	testCases := []TestCase{
 		{
 			"good tx from one signer",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(1)
-				msg := testdata.NewTestMsg(accs[0].acc.GetAddress())
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), accs[0].acc.GetAddress(), gomock.Any(), gomock.Any()).Return(nil)
+			func() {
+				msg := testdata.NewTestMsg(accounts[0].acc.GetAddress())
+				msgs = []sdk.Msg{msg}
 
-				return TestCaseArgs{
-					accNums: []uint64{0},
-					accSeqs: []uint64{0},
-					msgs:    []sdk.Msg{msg},
-					privs:   []cryptotypes.PrivKey{accs[0].priv},
-				}
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv}, []uint64{0}, []uint64{0}
 			},
 			false,
 			true,
@@ -248,36 +193,29 @@ func TestAnteHandlerAccountNumbers(t *testing.T) {
 		},
 		{
 			"new tx from wrong account number",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(1)
-				msg := testdata.NewTestMsg(accs[0].acc.GetAddress())
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), accs[0].acc.GetAddress(), gomock.Any(), gomock.Any()).Return(nil)
-
-				return TestCaseArgs{
-					accNums: []uint64{1},
-					accSeqs: []uint64{0},
-					msgs:    []sdk.Msg{msg},
-					privs:   []cryptotypes.PrivKey{accs[0].priv},
-				}
+			func() {
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv}, []uint64{1}, []uint64{1}
 			},
 			false,
 			false,
 			sdkerrors.ErrUnauthorized,
 		},
 		{
+			"new tx from correct account number",
+			func() {
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv}, []uint64{0}, []uint64{1}
+			},
+			false,
+			true,
+			nil,
+		},
+		{
 			"new tx with another signer and incorrect account numbers",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(2)
-				msg1 := testdata.NewTestMsg(accs[0].acc.GetAddress(), accs[1].acc.GetAddress())
-				msg2 := testdata.NewTestMsg(accs[1].acc.GetAddress(), accs[0].acc.GetAddress())
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), accs[0].acc.GetAddress(), gomock.Any(), gomock.Any()).Return(nil)
-
-				return TestCaseArgs{
-					accNums: []uint64{2, 0},
-					accSeqs: []uint64{0, 0},
-					msgs:    []sdk.Msg{msg1, msg2},
-					privs:   []cryptotypes.PrivKey{accs[0].priv, accs[1].priv},
-				}
+			func() {
+				msg1 := testdata.NewTestMsg(accounts[0].acc.GetAddress(), accounts[1].acc.GetAddress())
+				msg2 := testdata.NewTestMsg(accounts[1].acc.GetAddress(), accounts[0].acc.GetAddress())
+				msgs = []sdk.Msg{msg1, msg2}
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv, accounts[1].priv}, []uint64{1, 0}, []uint64{2, 0}
 			},
 			false,
 			false,
@@ -285,18 +223,8 @@ func TestAnteHandlerAccountNumbers(t *testing.T) {
 		},
 		{
 			"new tx with correct account numbers",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(2)
-				msg1 := testdata.NewTestMsg(accs[0].acc.GetAddress(), accs[1].acc.GetAddress())
-				msg2 := testdata.NewTestMsg(accs[1].acc.GetAddress(), accs[0].acc.GetAddress())
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-
-				return TestCaseArgs{
-					accNums: []uint64{0, 1},
-					accSeqs: []uint64{0, 0},
-					msgs:    []sdk.Msg{msg1, msg2},
-					privs:   []cryptotypes.PrivKey{accs[0].priv, accs[1].priv},
-				}
+			func() {
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv, accounts[1].priv}, []uint64{0, 1}, []uint64{2, 0}
 			},
 			false,
 			true,
@@ -305,34 +233,41 @@ func TestAnteHandlerAccountNumbers(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("Case %s", tc.desc), func(t *testing.T) {
-			suite := SetupTestSuite(t, false)
-			args := tc.malleate(suite)
-			args.feeAmount = testdata.NewTestFeeAmount()
-			args.gasLimit = testdata.NewTestGasLimit()
-			args.chainID = suite.ctx.ChainID()
+		suite.Run(fmt.Sprintf("Case %s", tc.desc), func() {
+			suite.txBuilder = suite.clientCtx.TxConfig.NewTxBuilder()
+			tc.malleate()
 
-			suite.RunTestCase(t, tc, args)
+			suite.RunTestCase(privs, msgs, feeAmount, gasLimit, accNums, accSeqs, suite.ctx.ChainID(), tc)
 		})
 	}
 }
 
 // Test logic around account number checking with many signers when BlockHeight is 0.
-func TestAnteHandlerAccountNumbersAtBlockHeightZero(t *testing.T) {
+func (suite *AnteTestSuite) TestAnteHandlerAccountNumbersAtBlockHeightZero() {
+	suite.SetupTest(false) // setup
+	suite.ctx = suite.ctx.WithBlockHeight(0)
+
+	// Same data for every test cases
+	accounts := suite.CreateTestAccounts(2)
+	feeAmount := testdata.NewTestFeeAmount()
+	gasLimit := testdata.NewTestGasLimit()
+
+	// Variable data per test case
+	var (
+		accNums []uint64
+		msgs    []sdk.Msg
+		privs   []cryptotypes.PrivKey
+		accSeqs []uint64
+	)
+
 	testCases := []TestCase{
 		{
 			"good tx from one signer",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(1)
-				msg := testdata.NewTestMsg(accs[0].acc.GetAddress())
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+			func() {
+				msg := testdata.NewTestMsg(accounts[0].acc.GetAddress())
+				msgs = []sdk.Msg{msg}
 
-				return TestCaseArgs{
-					accNums: []uint64{0},
-					accSeqs: []uint64{0},
-					msgs:    []sdk.Msg{msg},
-					privs:   []cryptotypes.PrivKey{accs[0].priv},
-				}
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv}, []uint64{0}, []uint64{0}
 			},
 			false,
 			true,
@@ -340,37 +275,30 @@ func TestAnteHandlerAccountNumbersAtBlockHeightZero(t *testing.T) {
 		},
 		{
 			"new tx from wrong account number",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(1)
-				msg := testdata.NewTestMsg(accs[0].acc.GetAddress())
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-
-				return TestCaseArgs{
-					accNums: []uint64{1}, // wrong account number
-					accSeqs: []uint64{0},
-					msgs:    []sdk.Msg{msg},
-					privs:   []cryptotypes.PrivKey{accs[0].priv},
-				}
+			func() {
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv}, []uint64{1}, []uint64{1}
 			},
 			false,
 			false,
 			sdkerrors.ErrUnauthorized,
 		},
 		{
+			"new tx from correct account number",
+			func() {
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv}, []uint64{0}, []uint64{1}
+			},
+			false,
+			true,
+			nil,
+		},
+		{
 			"new tx with another signer and incorrect account numbers",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(2)
-				msg1 := testdata.NewTestMsg(accs[0].acc.GetAddress(), accs[1].acc.GetAddress())
-				msg2 := testdata.NewTestMsg(accs[1].acc.GetAddress(), accs[0].acc.GetAddress())
+			func() {
+				msg1 := testdata.NewTestMsg(accounts[0].acc.GetAddress(), accounts[1].acc.GetAddress())
+				msg2 := testdata.NewTestMsg(accounts[1].acc.GetAddress(), accounts[0].acc.GetAddress())
+				msgs = []sdk.Msg{msg1, msg2}
 
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), accs[0].acc.GetAddress(), gomock.Any(), gomock.Any()).Return(nil)
-
-				return TestCaseArgs{
-					accNums: []uint64{1, 0}, // wrong account numbers
-					accSeqs: []uint64{0, 0},
-					msgs:    []sdk.Msg{msg1, msg2},
-					privs:   []cryptotypes.PrivKey{accs[0].priv, accs[1].priv},
-				}
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv, accounts[1].priv}, []uint64{1, 0}, []uint64{2, 0}
 			},
 			false,
 			false,
@@ -378,19 +306,9 @@ func TestAnteHandlerAccountNumbersAtBlockHeightZero(t *testing.T) {
 		},
 		{
 			"new tx with another signer and correct account numbers",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(2)
-				msg1 := testdata.NewTestMsg(accs[0].acc.GetAddress(), accs[1].acc.GetAddress())
-				msg2 := testdata.NewTestMsg(accs[1].acc.GetAddress(), accs[0].acc.GetAddress())
-
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), accs[0].acc.GetAddress(), gomock.Any(), gomock.Any()).Return(nil)
-
-				return TestCaseArgs{
-					accNums: []uint64{0, 0}, // correct account numbers
-					accSeqs: []uint64{0, 0},
-					msgs:    []sdk.Msg{msg1, msg2},
-					privs:   []cryptotypes.PrivKey{accs[0].priv, accs[1].priv},
-				}
+			func() {
+				// Note that accNums is [0,0] at block 0.
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv, accounts[1].priv}, []uint64{0, 0}, []uint64{2, 0}
 			},
 			false,
 			true,
@@ -399,40 +317,40 @@ func TestAnteHandlerAccountNumbersAtBlockHeightZero(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("Case %s", tc.desc), func(t *testing.T) {
-			suite := SetupTestSuite(t, false)
-			suite.ctx = suite.ctx.WithBlockHeight(0)
+		suite.Run(fmt.Sprintf("Case %s", tc.desc), func() {
 			suite.txBuilder = suite.clientCtx.TxConfig.NewTxBuilder()
+			tc.malleate()
 
-			args := tc.malleate(suite)
-			args.feeAmount = testdata.NewTestFeeAmount()
-			args.gasLimit = testdata.NewTestGasLimit()
-
-			suite.RunTestCase(t, tc, args)
+			suite.RunTestCase(privs, msgs, feeAmount, gasLimit, accNums, accSeqs, suite.ctx.ChainID(), tc)
 		})
 	}
 }
 
 // Test logic around sequence checking with one signer and many signers.
-func TestAnteHandlerSequences(t *testing.T) {
+func (suite *AnteTestSuite) TestAnteHandlerSequences() {
+	suite.SetupTest(false) // setup
+
 	// Same data for every test cases
+	accounts := suite.CreateTestAccounts(3)
 	feeAmount := testdata.NewTestFeeAmount()
 	gasLimit := testdata.NewTestGasLimit()
+
+	// Variable data per test case
+	var (
+		accNums []uint64
+		msgs    []sdk.Msg
+		privs   []cryptotypes.PrivKey
+		accSeqs []uint64
+	)
 
 	testCases := []TestCase{
 		{
 			"good tx from one signer",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(1)
-				msg := testdata.NewTestMsg(accs[0].acc.GetAddress())
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+			func() {
+				msg := testdata.NewTestMsg(accounts[0].acc.GetAddress())
+				msgs = []sdk.Msg{msg}
 
-				return TestCaseArgs{
-					accNums: []uint64{0},
-					accSeqs: []uint64{0},
-					msgs:    []sdk.Msg{msg},
-					privs:   []cryptotypes.PrivKey{accs[0].priv},
-				}
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv}, []uint64{0}, []uint64{0}
 			},
 			false,
 			true,
@@ -440,26 +358,8 @@ func TestAnteHandlerSequences(t *testing.T) {
 		},
 		{
 			"test sending it again fails (replay protection)",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(1)
-				msg := testdata.NewTestMsg(accs[0].acc.GetAddress())
-				msgs := []sdk.Msg{msg}
-				privs, accNums, accSeqs := []cryptotypes.PrivKey{accs[0].priv}, []uint64{0}, []uint64{0}
-
-				// This will be called only once given that the second tx will fail
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
-
-				// Send the same tx before running the test case, to trigger replay protection.
-				var err error
-				suite.ctx, err = suite.DeliverMsgs(t, privs, msgs, feeAmount, gasLimit, accNums, accSeqs, suite.ctx.ChainID(), false)
-				require.NoError(t, err)
-
-				return TestCaseArgs{
-					accNums: accNums,
-					accSeqs: accSeqs,
-					msgs:    msgs,
-					privs:   privs,
-				}
+			func() {
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv}, []uint64{0}, []uint64{0}
 			},
 			false,
 			false,
@@ -467,28 +367,8 @@ func TestAnteHandlerSequences(t *testing.T) {
 		},
 		{
 			"fix sequence, should pass",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(1)
-				msg := testdata.NewTestMsg(accs[0].acc.GetAddress())
-				msgs := []sdk.Msg{msg}
-
-				privs, accNums, accSeqs := []cryptotypes.PrivKey{accs[0].priv}, []uint64{0}, []uint64{0}
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
-
-				// Send the same tx before running the test case, then change the sequence to a valid one.
-				var err error
-				suite.ctx, err = suite.DeliverMsgs(t, privs, msgs, feeAmount, gasLimit, accNums, accSeqs, suite.ctx.ChainID(), false)
-				require.NoError(t, err)
-
-				// +1 the account sequence
-				accSeqs = []uint64{1}
-
-				return TestCaseArgs{
-					accNums: accNums,
-					accSeqs: accSeqs,
-					msgs:    msgs,
-					privs:   privs,
-				}
+			func() {
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv}, []uint64{0}, []uint64{1}
 			},
 			false,
 			true,
@@ -496,19 +376,12 @@ func TestAnteHandlerSequences(t *testing.T) {
 		},
 		{
 			"new tx with another signer and correct sequences",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(3)
-				msg1 := testdata.NewTestMsg(accs[0].acc.GetAddress(), accs[1].acc.GetAddress())
-				msg2 := testdata.NewTestMsg(accs[2].acc.GetAddress(), accs[0].acc.GetAddress())
+			func() {
+				msg1 := testdata.NewTestMsg(accounts[0].acc.GetAddress(), accounts[1].acc.GetAddress())
+				msg2 := testdata.NewTestMsg(accounts[2].acc.GetAddress(), accounts[0].acc.GetAddress())
+				msgs = []sdk.Msg{msg1, msg2}
 
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-
-				return TestCaseArgs{
-					accNums: []uint64{0, 1, 2},
-					accSeqs: []uint64{0, 0, 0},
-					msgs:    []sdk.Msg{msg1, msg2},
-					privs:   []cryptotypes.PrivKey{accs[0].priv, accs[1].priv, accs[2].priv},
-				}
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv, accounts[1].priv, accounts[2].priv}, []uint64{0, 1, 2}, []uint64{2, 0, 0}
 			},
 			false,
 			true,
@@ -516,59 +389,17 @@ func TestAnteHandlerSequences(t *testing.T) {
 		},
 		{
 			"replay fails",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(3)
-				msg1 := testdata.NewTestMsg(accs[0].acc.GetAddress(), accs[1].acc.GetAddress())
-				msg2 := testdata.NewTestMsg(accs[2].acc.GetAddress(), accs[0].acc.GetAddress())
-				msgs := []sdk.Msg{msg1, msg2}
-
-				privs, accNums, accSeqs := []cryptotypes.PrivKey{accs[0].priv, accs[1].priv, accs[2].priv}, []uint64{0, 1, 2}, []uint64{0, 0, 0}
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
-
-				// Send the same tx before running the test case, to trigger replay protection.
-				var err error
-				suite.ctx, err = suite.DeliverMsgs(t, privs, msgs, feeAmount, gasLimit, accNums, accSeqs, suite.ctx.ChainID(), false)
-				require.NoError(t, err)
-
-				return TestCaseArgs{
-					accNums: accNums,
-					accSeqs: accSeqs,
-					msgs:    []sdk.Msg{msg1, msg2},
-					privs:   privs,
-				}
-			},
+			func() {},
 			false,
 			false,
 			sdkerrors.ErrWrongSequence,
 		},
 		{
 			"tx from just second signer with incorrect sequence fails",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(3)
-				msg1 := testdata.NewTestMsg(accs[0].acc.GetAddress(), accs[1].acc.GetAddress())
-				msg2 := testdata.NewTestMsg(accs[2].acc.GetAddress(), accs[0].acc.GetAddress())
-				msgs := []sdk.Msg{msg1, msg2}
-
-				privs, accNums, accSeqs := []cryptotypes.PrivKey{accs[0].priv, accs[1].priv, accs[2].priv}, []uint64{0, 1, 2}, []uint64{0, 0, 0}
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
-
-				// Send the same tx before running the test case, to trigger replay protection.
-				var err error
-				suite.ctx, err = suite.DeliverMsgs(t, privs, msgs, feeAmount, gasLimit, accNums, accSeqs, suite.ctx.ChainID(), false)
-				require.NoError(t, err)
-
-				// Send a message using the second signer, this will fail given that the second signer already sent a TX,
-				// thus the sequence (0) is incorrect.
-				msg1 = testdata.NewTestMsg(accs[1].acc.GetAddress())
-				msgs = []sdk.Msg{msg1}
-				privs, accNums, accSeqs = []cryptotypes.PrivKey{accs[1].priv}, []uint64{1}, []uint64{0}
-
-				return TestCaseArgs{
-					accNums: accNums,
-					accSeqs: accSeqs,
-					msgs:    msgs,
-					privs:   privs,
-				}
+			func() {
+				msg := testdata.NewTestMsg(accounts[1].acc.GetAddress())
+				msgs = []sdk.Msg{msg}
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[1].priv}, []uint64{1}, []uint64{0}
 			},
 			false,
 			false,
@@ -576,32 +407,20 @@ func TestAnteHandlerSequences(t *testing.T) {
 		},
 		{
 			"fix the sequence and it passes",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(3)
-				msg1 := testdata.NewTestMsg(accs[0].acc.GetAddress(), accs[1].acc.GetAddress())
-				msg2 := testdata.NewTestMsg(accs[2].acc.GetAddress(), accs[0].acc.GetAddress())
-				msgs := []sdk.Msg{msg1, msg2}
+			func() {
+				accSeqs = []uint64{1}
+			},
+			false,
+			true,
+			nil,
+		},
+		{
+			"fix the sequence and it passes",
+			func() {
+				msg := testdata.NewTestMsg(accounts[0].acc.GetAddress(), accounts[1].acc.GetAddress())
+				msgs = []sdk.Msg{msg}
 
-				privs, accNums, accSeqs := []cryptotypes.PrivKey{accs[0].priv, accs[1].priv, accs[2].priv}, []uint64{0, 1, 2}, []uint64{0, 0, 0}
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
-
-				// Send the same tx before running the test case, to trigger replay protection.
-				var err error
-				suite.ctx, err = suite.DeliverMsgs(t, privs, msgs, feeAmount, gasLimit, accNums, accSeqs, suite.ctx.ChainID(), false)
-				require.NoError(t, err)
-
-				// Send a message using the second signer, this will now pass given that the second signer already sent a TX
-				// and the sequence was fixed (1).
-				msg1 = testdata.NewTestMsg(accs[1].acc.GetAddress())
-				msgs = []sdk.Msg{msg1}
-				privs, accNums, accSeqs = []cryptotypes.PrivKey{accs[1].priv}, []uint64{1}, []uint64{1}
-
-				return TestCaseArgs{
-					accNums: accNums,
-					accSeqs: accSeqs,
-					msgs:    msgs,
-					privs:   privs,
-				}
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv, accounts[1].priv}, []uint64{0, 1}, []uint64{3, 2}
 			},
 			false,
 			true,
@@ -610,89 +429,117 @@ func TestAnteHandlerSequences(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("Case %s", tc.desc), func(t *testing.T) {
-			suite := SetupTestSuite(t, false)
+		suite.Run(fmt.Sprintf("Case %s", tc.desc), func() {
 			suite.txBuilder = suite.clientCtx.TxConfig.NewTxBuilder()
-			args := tc.malleate(suite)
-			args.feeAmount = feeAmount
-			args.gasLimit = gasLimit
+			tc.malleate()
 
-			suite.RunTestCase(t, tc, args)
+			suite.RunTestCase(privs, msgs, feeAmount, gasLimit, accNums, accSeqs, suite.ctx.ChainID(), tc)
 		})
 	}
 }
 
 // Test logic around fee deduction.
-func TestAnteHandlerFees(t *testing.T) {
+func (suite *AnteTestSuite) TestAnteHandlerFees() {
+	suite.SetupTest(false) // setup
+
 	// Same data for every test cases
+	priv0, _, addr0 := testdata.KeyTestPubAddr()
+
+	acc1 := suite.app.AccountKeeper.NewAccountWithAddress(suite.ctx, addr0)
+	suite.app.AccountKeeper.SetAccount(suite.ctx, acc1)
+	msgs := []sdk.Msg{testdata.NewTestMsg(addr0)}
 	feeAmount := testdata.NewTestFeeAmount()
 	gasLimit := testdata.NewTestGasLimit()
+	privs, accNums, accSeqs := []cryptotypes.PrivKey{priv0}, []uint64{0}, []uint64{0}
 
-	testCases := []TestCase{
+	testCases := []struct {
+		desc     string
+		malleate func()
+		simulate bool
+		expPass  bool
+		expErr   error
+	}{
 		{
 			"signer has no funds",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(1)
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), accs[0].acc.GetAddress(), gomock.Any(), feeAmount).Return(sdkerrors.ErrInsufficientFunds)
-
-				return TestCaseArgs{
-					accNums: []uint64{0},
-					accSeqs: []uint64{0},
-					msgs:    []sdk.Msg{testdata.NewTestMsg(accs[0].acc.GetAddress())},
-					privs:   []cryptotypes.PrivKey{accs[0].priv},
-				}
+			func() {
+				accSeqs = []uint64{0}
 			},
 			false,
 			false,
 			sdkerrors.ErrInsufficientFunds,
 		},
 		{
-			"signer has enough funds, should pass",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(1)
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), accs[0].acc.GetAddress(), gomock.Any(), feeAmount).Return(nil)
+			"signer does not have enough funds to pay the fee",
+			func() {
+				err := testutil.FundAccount(suite.app.BankKeeper, suite.ctx, addr0, sdk.NewCoins(sdk.NewInt64Coin("atom", 149)))
+				suite.Require().NoError(err)
+			},
+			false,
+			false,
+			sdkerrors.ErrInsufficientFunds,
+		},
+		{
+			"signer as enough funds, should pass",
+			func() {
+				accNums = []uint64{acc1.GetAccountNumber()}
 
-				return TestCaseArgs{
-					accNums: []uint64{0},
-					accSeqs: []uint64{0},
-					msgs:    []sdk.Msg{testdata.NewTestMsg(accs[0].acc.GetAddress())},
-					privs:   []cryptotypes.PrivKey{accs[0].priv},
-				}
+				modAcc := suite.app.AccountKeeper.GetModuleAccount(suite.ctx, types.FeeCollectorName)
+
+				suite.Require().True(suite.app.BankKeeper.GetAllBalances(suite.ctx, modAcc.GetAddress()).Empty())
+				require.True(sdk.IntEq(suite.T(), suite.app.BankKeeper.GetAllBalances(suite.ctx, addr0).AmountOf("atom"), sdk.NewInt(149)))
+
+				err := testutil.FundAccount(suite.app.BankKeeper, suite.ctx, addr0, sdk.NewCoins(sdk.NewInt64Coin("atom", 1)))
+				suite.Require().NoError(err)
 			},
 			false,
 			true,
 			nil,
 		},
+		{
+			"signer doesn't have any more funds",
+			func() {
+				modAcc := suite.app.AccountKeeper.GetModuleAccount(suite.ctx, types.FeeCollectorName)
+
+				require.True(sdk.IntEq(suite.T(), suite.app.BankKeeper.GetAllBalances(suite.ctx, modAcc.GetAddress()).AmountOf("atom"), sdk.NewInt(150)))
+				require.True(sdk.IntEq(suite.T(), suite.app.BankKeeper.GetAllBalances(suite.ctx, addr0).AmountOf("atom"), sdk.NewInt(0)))
+			},
+			false,
+			false,
+			sdkerrors.ErrInsufficientFunds,
+		},
 	}
 
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("Case %s", tc.desc), func(t *testing.T) {
-			suite := SetupTestSuite(t, false)
+		suite.Run(fmt.Sprintf("Case %s", tc.desc), func() {
 			suite.txBuilder = suite.clientCtx.TxConfig.NewTxBuilder()
-			args := tc.malleate(suite)
-			args.feeAmount = feeAmount
-			args.gasLimit = gasLimit
+			tc.malleate()
 
-			suite.RunTestCase(t, tc, args)
+			suite.RunTestCase(privs, msgs, feeAmount, gasLimit, accNums, accSeqs, suite.ctx.ChainID(), tc)
 		})
 	}
 }
 
 // Test logic around memo gas consumption.
-func TestAnteHandlerMemoGas(t *testing.T) {
+func (suite *AnteTestSuite) TestAnteHandlerMemoGas() {
+	suite.SetupTest(false) // setup
+
+	// Same data for every test cases
+	accounts := suite.CreateTestAccounts(1)
+	msgs := []sdk.Msg{testdata.NewTestMsg(accounts[0].acc.GetAddress())}
+	privs, accNums, accSeqs := []cryptotypes.PrivKey{accounts[0].priv}, []uint64{0}, []uint64{0}
+
+	// Variable data per test case
+	var (
+		feeAmount sdk.Coins
+		gasLimit  uint64
+	)
+
 	testCases := []TestCase{
 		{
 			"tx does not have enough gas",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(1)
-				return TestCaseArgs{
-					accNums:   []uint64{0},
-					accSeqs:   []uint64{0},
-					feeAmount: sdk.NewCoins(sdk.NewInt64Coin("atom", 0)),
-					gasLimit:  0,
-					msgs:      []sdk.Msg{testdata.NewTestMsg(accs[0].acc.GetAddress())},
-					privs:     []cryptotypes.PrivKey{accs[0].priv},
-				}
+			func() {
+				feeAmount = sdk.NewCoins(sdk.NewInt64Coin("atom", 0))
+				gasLimit = 0
 			},
 			false,
 			false,
@@ -700,18 +547,10 @@ func TestAnteHandlerMemoGas(t *testing.T) {
 		},
 		{
 			"tx with memo doesn't have enough gas",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(1)
+			func() {
+				feeAmount = sdk.NewCoins(sdk.NewInt64Coin("atom", 0))
+				gasLimit = 801
 				suite.txBuilder.SetMemo("abcininasidniandsinasindiansdiansdinaisndiasndiadninsd")
-
-				return TestCaseArgs{
-					accNums:   []uint64{0},
-					accSeqs:   []uint64{0},
-					feeAmount: sdk.NewCoins(sdk.NewInt64Coin("atom", 0)),
-					gasLimit:  801,
-					msgs:      []sdk.Msg{testdata.NewTestMsg(accs[0].acc.GetAddress())},
-					privs:     []cryptotypes.PrivKey{accs[0].priv},
-				}
 			},
 			false,
 			false,
@@ -719,18 +558,10 @@ func TestAnteHandlerMemoGas(t *testing.T) {
 		},
 		{
 			"memo too large",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(1)
+			func() {
+				feeAmount = sdk.NewCoins(sdk.NewInt64Coin("atom", 0))
+				gasLimit = 50000
 				suite.txBuilder.SetMemo(strings.Repeat("01234567890", 500))
-
-				return TestCaseArgs{
-					accNums:   []uint64{0},
-					accSeqs:   []uint64{0},
-					feeAmount: sdk.NewCoins(sdk.NewInt64Coin("atom", 0)),
-					gasLimit:  50000,
-					msgs:      []sdk.Msg{testdata.NewTestMsg(accs[0].acc.GetAddress())},
-					privs:     []cryptotypes.PrivKey{accs[0].priv},
-				}
 			},
 			false,
 			false,
@@ -738,17 +569,10 @@ func TestAnteHandlerMemoGas(t *testing.T) {
 		},
 		{
 			"tx with memo has enough gas",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(1)
+			func() {
+				feeAmount = sdk.NewCoins(sdk.NewInt64Coin("atom", 0))
+				gasLimit = 60000
 				suite.txBuilder.SetMemo(strings.Repeat("0123456789", 10))
-				return TestCaseArgs{
-					accNums:   []uint64{0},
-					accSeqs:   []uint64{0},
-					feeAmount: sdk.NewCoins(sdk.NewInt64Coin("atom", 0)),
-					gasLimit:  60000,
-					msgs:      []sdk.Msg{testdata.NewTestMsg(accs[0].acc.GetAddress())},
-					privs:     []cryptotypes.PrivKey{accs[0].priv},
-				}
 			},
 			false,
 			true,
@@ -757,37 +581,41 @@ func TestAnteHandlerMemoGas(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("Case %s", tc.desc), func(t *testing.T) {
-			suite := SetupTestSuite(t, false)
+		suite.Run(fmt.Sprintf("Case %s", tc.desc), func() {
 			suite.txBuilder = suite.clientCtx.TxConfig.NewTxBuilder()
-			args := tc.malleate(suite)
+			tc.malleate()
 
-			suite.RunTestCase(t, tc, args)
+			suite.RunTestCase(privs, msgs, feeAmount, gasLimit, accNums, accSeqs, suite.ctx.ChainID(), tc)
 		})
 	}
 }
 
-func TestAnteHandlerMultiSigner(t *testing.T) {
+func (suite *AnteTestSuite) TestAnteHandlerMultiSigner() {
+	suite.SetupTest(false) // setup
+
+	// Same data for every test cases
+	accounts := suite.CreateTestAccounts(3)
+	msg1 := testdata.NewTestMsg(accounts[0].acc.GetAddress(), accounts[1].acc.GetAddress())
+	msg2 := testdata.NewTestMsg(accounts[2].acc.GetAddress(), accounts[0].acc.GetAddress())
+	msg3 := testdata.NewTestMsg(accounts[1].acc.GetAddress(), accounts[2].acc.GetAddress())
 	feeAmount := testdata.NewTestFeeAmount()
 	gasLimit := testdata.NewTestGasLimit()
+
+	// Variable data per test case
+	var (
+		accNums []uint64
+		msgs    []sdk.Msg
+		privs   []cryptotypes.PrivKey
+		accSeqs []uint64
+	)
 
 	testCases := []TestCase{
 		{
 			"signers in order",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(3)
-				msg1 := testdata.NewTestMsg(accs[0].acc.GetAddress(), accs[1].acc.GetAddress())
-				msg2 := testdata.NewTestMsg(accs[2].acc.GetAddress(), accs[0].acc.GetAddress())
-				msg3 := testdata.NewTestMsg(accs[1].acc.GetAddress(), accs[2].acc.GetAddress())
+			func() {
+				msgs = []sdk.Msg{msg1, msg2, msg3}
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv, accounts[1].priv, accounts[2].priv}, []uint64{0, 1, 2}, []uint64{0, 0, 0}
 				suite.txBuilder.SetMemo("Check signers are in expected order and different account numbers works")
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-
-				return TestCaseArgs{
-					accNums: []uint64{0, 1, 2},
-					accSeqs: []uint64{0, 0, 0},
-					msgs:    []sdk.Msg{msg1, msg2, msg3},
-					privs:   []cryptotypes.PrivKey{accs[0].priv, accs[1].priv, accs[2].priv},
-				}
 			},
 			false,
 			true,
@@ -795,29 +623,9 @@ func TestAnteHandlerMultiSigner(t *testing.T) {
 		},
 		{
 			"change sequence numbers (only accounts 0 and 1 sign)",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(3)
-				msg1 := testdata.NewTestMsg(accs[0].acc.GetAddress(), accs[1].acc.GetAddress())
-				msg2 := testdata.NewTestMsg(accs[2].acc.GetAddress(), accs[0].acc.GetAddress())
-				msg3 := testdata.NewTestMsg(accs[1].acc.GetAddress(), accs[2].acc.GetAddress())
-				msgs := []sdk.Msg{msg1, msg2, msg3}
-				privs, accNums, accSeqs := []cryptotypes.PrivKey{accs[0].priv, accs[1].priv, accs[2].priv}, []uint64{0, 1, 2}, []uint64{0, 0, 0}
-
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
-
-				var err error
-				suite.ctx, err = suite.DeliverMsgs(t, privs, msgs, feeAmount, gasLimit, accNums, accSeqs, suite.ctx.ChainID(), false)
-				require.NoError(t, err)
-
+			func() {
 				msgs = []sdk.Msg{msg1}
-				privs, accNums, accSeqs = []cryptotypes.PrivKey{accs[0].priv, accs[1].priv}, []uint64{0, 1}, []uint64{1, 1}
-
-				return TestCaseArgs{
-					accNums: accNums,
-					accSeqs: accSeqs,
-					msgs:    msgs,
-					privs:   privs,
-				}
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv, accounts[1].priv}, []uint64{0, 1}, []uint64{1, 1}
 			},
 			false,
 			true,
@@ -825,28 +633,9 @@ func TestAnteHandlerMultiSigner(t *testing.T) {
 		},
 		{
 			"change sequence numbers (only accounts 1 and 2 sign)",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(3)
-				msg1 := testdata.NewTestMsg(accs[0].acc.GetAddress(), accs[1].acc.GetAddress())
-				msg2 := testdata.NewTestMsg(accs[2].acc.GetAddress(), accs[0].acc.GetAddress())
-				msg3 := testdata.NewTestMsg(accs[1].acc.GetAddress(), accs[2].acc.GetAddress())
-				msgs := []sdk.Msg{msg1, msg2, msg3}
-				privs, accNums, accSeqs := []cryptotypes.PrivKey{accs[0].priv, accs[1].priv, accs[2].priv}, []uint64{0, 1, 2}, []uint64{0, 0, 0}
-
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
-				var err error
-				suite.ctx, err = suite.DeliverMsgs(t, privs, msgs, feeAmount, gasLimit, accNums, accSeqs, suite.ctx.ChainID(), false)
-				require.NoError(t, err)
-
-				msgs = []sdk.Msg{msg3}
-				privs, accNums, accSeqs = []cryptotypes.PrivKey{accs[1].priv, accs[2].priv}, []uint64{1, 2}, []uint64{1, 1}
-
-				return TestCaseArgs{
-					accNums: accNums,
-					accSeqs: accSeqs,
-					msgs:    msgs,
-					privs:   privs,
-				}
+			func() {
+				msgs = []sdk.Msg{msg2}
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[2].priv, accounts[0].priv}, []uint64{2, 0}, []uint64{1, 2}
 			},
 			false,
 			true,
@@ -854,28 +643,9 @@ func TestAnteHandlerMultiSigner(t *testing.T) {
 		},
 		{
 			"everyone signs again",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(3)
-				msg1 := testdata.NewTestMsg(accs[0].acc.GetAddress(), accs[1].acc.GetAddress())
-				msg2 := testdata.NewTestMsg(accs[2].acc.GetAddress(), accs[0].acc.GetAddress())
-				msg3 := testdata.NewTestMsg(accs[1].acc.GetAddress(), accs[2].acc.GetAddress())
-				msgs := []sdk.Msg{msg1, msg2, msg3}
-
-				privs, accNums, accSeqs := []cryptotypes.PrivKey{accs[0].priv, accs[1].priv, accs[2].priv}, []uint64{0, 1, 2}, []uint64{0, 0, 0}
-
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
-				var err error
-				suite.ctx, err = suite.DeliverMsgs(t, privs, msgs, feeAmount, gasLimit, accNums, accSeqs, suite.ctx.ChainID(), false)
-				require.NoError(t, err)
-
-				privs, accNums, accSeqs = []cryptotypes.PrivKey{accs[0].priv, accs[1].priv, accs[2].priv}, []uint64{0, 1, 2}, []uint64{1, 1, 1}
-
-				return TestCaseArgs{
-					accNums: accNums,
-					accSeqs: accSeqs,
-					msgs:    msgs,
-					privs:   privs,
-				}
+			func() {
+				msgs = []sdk.Msg{msg1, msg2, msg3}
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv, accounts[1].priv, accounts[2].priv}, []uint64{0, 1, 2}, []uint64{3, 2, 2}
 			},
 			false,
 			true,
@@ -884,40 +654,42 @@ func TestAnteHandlerMultiSigner(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("Case %s", tc.desc), func(t *testing.T) {
-			suite := SetupTestSuite(t, false)
+		suite.Run(fmt.Sprintf("Case %s", tc.desc), func() {
 			suite.txBuilder = suite.clientCtx.TxConfig.NewTxBuilder()
-			args := tc.malleate(suite)
-			args.feeAmount = feeAmount
-			args.gasLimit = gasLimit
-			args.chainID = suite.ctx.ChainID()
+			tc.malleate()
 
-			suite.RunTestCase(t, tc, args)
+			suite.RunTestCase(privs, msgs, feeAmount, gasLimit, accNums, accSeqs, suite.ctx.ChainID(), tc)
 		})
 	}
 }
 
-func TestAnteHandlerBadSignBytes(t *testing.T) {
-	feeAmount := testdata.NewTestFeeAmount()
-	gasLimit := testdata.NewTestGasLimit()
+func (suite *AnteTestSuite) TestAnteHandlerBadSignBytes() {
+	suite.SetupTest(false) // setup
+
+	// Same data for every test cases
+	accounts := suite.CreateTestAccounts(2)
+	msg0 := testdata.NewTestMsg(accounts[0].acc.GetAddress())
+
+	// Variable data per test case
+	var (
+		accNums   []uint64
+		chainID   string
+		feeAmount sdk.Coins
+		gasLimit  uint64
+		msgs      []sdk.Msg
+		privs     []cryptotypes.PrivKey
+		accSeqs   []uint64
+	)
 
 	testCases := []TestCase{
 		{
 			"test good tx and signBytes",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(1)
-				msg0 := testdata.NewTestMsg(accs[0].acc.GetAddress())
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-
-				return TestCaseArgs{
-					chainID:   suite.ctx.ChainID(),
-					accNums:   []uint64{0},
-					accSeqs:   []uint64{0},
-					feeAmount: feeAmount,
-					gasLimit:  gasLimit,
-					msgs:      []sdk.Msg{msg0},
-					privs:     []cryptotypes.PrivKey{accs[0].priv},
-				}
+			func() {
+				chainID = suite.ctx.ChainID()
+				feeAmount = testdata.NewTestFeeAmount()
+				gasLimit = testdata.NewTestGasLimit()
+				msgs = []sdk.Msg{msg0}
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv}, []uint64{0}, []uint64{0}
 			},
 			false,
 			true,
@@ -925,20 +697,9 @@ func TestAnteHandlerBadSignBytes(t *testing.T) {
 		},
 		{
 			"test wrong chainID",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(1)
-				msg0 := testdata.NewTestMsg(accs[0].acc.GetAddress())
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-
-				return TestCaseArgs{
-					chainID:   "wrong-chain-id",
-					accNums:   []uint64{0},
-					accSeqs:   []uint64{0},
-					feeAmount: feeAmount,
-					gasLimit:  gasLimit,
-					msgs:      []sdk.Msg{msg0},
-					privs:     []cryptotypes.PrivKey{accs[0].priv},
-				}
+			func() {
+				accSeqs = []uint64{1} // Back to correct accSeqs
+				chainID = "chain-foo"
 			},
 			false,
 			false,
@@ -946,20 +707,9 @@ func TestAnteHandlerBadSignBytes(t *testing.T) {
 		},
 		{
 			"test wrong accSeqs",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(1)
-				msg0 := testdata.NewTestMsg(accs[0].acc.GetAddress())
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-
-				return TestCaseArgs{
-					chainID:   suite.ctx.ChainID(),
-					accNums:   []uint64{0},
-					accSeqs:   []uint64{2}, // wrong accSeq
-					feeAmount: feeAmount,
-					gasLimit:  gasLimit,
-					msgs:      []sdk.Msg{msg0},
-					privs:     []cryptotypes.PrivKey{accs[0].priv},
-				}
+			func() {
+				chainID = suite.ctx.ChainID() // Back to correct chainID
+				accSeqs = []uint64{2}
 			},
 			false,
 			false,
@@ -967,20 +717,9 @@ func TestAnteHandlerBadSignBytes(t *testing.T) {
 		},
 		{
 			"test wrong accNums",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(1)
-				msg0 := testdata.NewTestMsg(accs[0].acc.GetAddress())
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-
-				return TestCaseArgs{
-					chainID:   suite.ctx.ChainID(),
-					accNums:   []uint64{1}, // wrong accNum
-					accSeqs:   []uint64{0},
-					feeAmount: feeAmount,
-					gasLimit:  gasLimit,
-					msgs:      []sdk.Msg{msg0},
-					privs:     []cryptotypes.PrivKey{accs[0].priv},
-				}
+			func() {
+				accSeqs = []uint64{1} // Back to correct accSeqs
+				accNums = []uint64{1}
 			},
 			false,
 			false,
@@ -988,40 +727,41 @@ func TestAnteHandlerBadSignBytes(t *testing.T) {
 		},
 		{
 			"test wrong msg",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(2)
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-
-				return TestCaseArgs{
-					chainID:   suite.ctx.ChainID(),
-					accNums:   []uint64{0},
-					accSeqs:   []uint64{0},
-					feeAmount: feeAmount,
-					gasLimit:  gasLimit,
-					msgs:      []sdk.Msg{testdata.NewTestMsg(accs[1].acc.GetAddress())}, // wrong account in the msg
-					privs:     []cryptotypes.PrivKey{accs[0].priv},
-				}
+			func() {
+				msgs = []sdk.Msg{testdata.NewTestMsg(accounts[1].acc.GetAddress())}
 			},
 			false,
 			false,
 			sdkerrors.ErrInvalidPubKey,
 		},
 		{
+			"test wrong fee gas",
+			func() {
+				msgs = []sdk.Msg{msg0} // Back to correct msgs
+				feeAmount = testdata.NewTestFeeAmount()
+				gasLimit = testdata.NewTestGasLimit() + 100
+			},
+			false,
+			false,
+			sdkerrors.ErrUnauthorized,
+		},
+		{
+			"test wrong fee amount",
+			func() {
+				feeAmount = testdata.NewTestFeeAmount()
+				feeAmount[0].Amount = feeAmount[0].Amount.AddRaw(100)
+				gasLimit = testdata.NewTestGasLimit()
+			},
+			false,
+			false,
+			sdkerrors.ErrUnauthorized,
+		},
+		{
 			"test wrong signer if public key exist",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(2)
-				msg0 := testdata.NewTestMsg(accs[0].acc.GetAddress())
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-
-				return TestCaseArgs{
-					chainID:   suite.ctx.ChainID(),
-					accNums:   []uint64{0},
-					accSeqs:   []uint64{0},
-					feeAmount: feeAmount,
-					gasLimit:  gasLimit,
-					msgs:      []sdk.Msg{msg0},
-					privs:     []cryptotypes.PrivKey{accs[1].priv},
-				}
+			func() {
+				feeAmount = testdata.NewTestFeeAmount()
+				gasLimit = testdata.NewTestGasLimit()
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[1].priv}, []uint64{0}, []uint64{1}
 			},
 			false,
 			false,
@@ -1029,19 +769,9 @@ func TestAnteHandlerBadSignBytes(t *testing.T) {
 		},
 		{
 			"test wrong signer if public doesn't exist",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(2)
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-
-				return TestCaseArgs{
-					chainID:   suite.ctx.ChainID(),
-					accNums:   []uint64{1},
-					accSeqs:   []uint64{0},
-					feeAmount: feeAmount,
-					gasLimit:  gasLimit,
-					msgs:      []sdk.Msg{testdata.NewTestMsg(accs[1].acc.GetAddress())},
-					privs:     []cryptotypes.PrivKey{accs[0].priv},
-				}
+			func() {
+				msgs = []sdk.Msg{testdata.NewTestMsg(accounts[1].acc.GetAddress())}
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv}, []uint64{1}, []uint64{0}
 			},
 			false,
 			false,
@@ -1050,33 +780,37 @@ func TestAnteHandlerBadSignBytes(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("Case %s", tc.desc), func(t *testing.T) {
-			suite := SetupTestSuite(t, false)
+		suite.Run(fmt.Sprintf("Case %s", tc.desc), func() {
 			suite.txBuilder = suite.clientCtx.TxConfig.NewTxBuilder()
-			args := tc.malleate(suite)
+			tc.malleate()
 
-			suite.RunTestCase(t, tc, args)
+			suite.RunTestCase(privs, msgs, feeAmount, gasLimit, accNums, accSeqs, chainID, tc)
 		})
 	}
 }
 
-func TestAnteHandlerSetPubKey(t *testing.T) {
+func (suite *AnteTestSuite) TestAnteHandlerSetPubKey() {
+	suite.SetupTest(false) // setup
+
+	// Same data for every test cases
+	accounts := suite.CreateTestAccounts(2)
 	feeAmount := testdata.NewTestFeeAmount()
 	gasLimit := testdata.NewTestGasLimit()
+
+	// Variable data per test case
+	var (
+		accNums []uint64
+		msgs    []sdk.Msg
+		privs   []cryptotypes.PrivKey
+		accSeqs []uint64
+	)
 
 	testCases := []TestCase{
 		{
 			"test good tx",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(1)
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-
-				return TestCaseArgs{
-					accNums: []uint64{0},
-					accSeqs: []uint64{0},
-					msgs:    []sdk.Msg{testdata.NewTestMsg(accs[0].acc.GetAddress())},
-					privs:   []cryptotypes.PrivKey{accs[0].priv},
-				}
+			func() {
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv}, []uint64{0}, []uint64{0}
+				msgs = []sdk.Msg{testdata.NewTestMsg(accounts[0].acc.GetAddress())}
 			},
 			false,
 			true,
@@ -1084,26 +818,10 @@ func TestAnteHandlerSetPubKey(t *testing.T) {
 		},
 		{
 			"make sure public key has been set (tx itself should fail because of replay protection)",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(1)
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
-
-				privs, accNums, accSeqs := []cryptotypes.PrivKey{accs[0].priv}, []uint64{0}, []uint64{0}
-				msgs := []sdk.Msg{testdata.NewTestMsg(accs[0].acc.GetAddress())}
-				var err error
-				suite.ctx, err = suite.DeliverMsgs(t, privs, msgs, feeAmount, gasLimit, accNums, accSeqs, suite.ctx.ChainID(), false)
-				require.NoError(t, err)
-
+			func() {
 				// Make sure public key has been set from previous test.
-				acc0 := suite.accountKeeper.GetAccount(suite.ctx, accs[0].acc.GetAddress())
-				require.Equal(t, acc0.GetPubKey(), accs[0].priv.PubKey())
-
-				return TestCaseArgs{
-					accNums: accNums,
-					accSeqs: accSeqs,
-					msgs:    msgs,
-					privs:   privs,
-				}
+				acc0 := suite.app.AccountKeeper.GetAccount(suite.ctx, accounts[0].acc.GetAddress())
+				suite.Require().Equal(acc0.GetPubKey(), accounts[0].priv.PubKey())
 			},
 			false,
 			false,
@@ -1111,15 +829,9 @@ func TestAnteHandlerSetPubKey(t *testing.T) {
 		},
 		{
 			"test public key not found",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(2)
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-				return TestCaseArgs{
-					accNums: []uint64{0},
-					accSeqs: []uint64{0},
-					msgs:    []sdk.Msg{testdata.NewTestMsg(accs[1].acc.GetAddress())},
-					privs:   []cryptotypes.PrivKey{accs[0].priv}, // wrong signer
-				}
+			func() {
+				// See above, `privs` still holds the private key of accounts[0].
+				msgs = []sdk.Msg{testdata.NewTestMsg(accounts[1].acc.GetAddress())}
 			},
 			false,
 			false,
@@ -1127,45 +839,35 @@ func TestAnteHandlerSetPubKey(t *testing.T) {
 		},
 		{
 			"make sure public key is not set, when tx has no pubkey or signature",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(2)
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-
+			func() {
 				// Make sure public key has not been set from previous test.
-				acc1 := suite.accountKeeper.GetAccount(suite.ctx, accs[1].acc.GetAddress())
-				require.Nil(t, acc1.GetPubKey())
+				acc1 := suite.app.AccountKeeper.GetAccount(suite.ctx, accounts[1].acc.GetAddress())
+				suite.Require().Nil(acc1.GetPubKey())
 
-				privs, accNums, accSeqs := []cryptotypes.PrivKey{accs[1].priv}, []uint64{1}, []uint64{0}
-				msgs := []sdk.Msg{testdata.NewTestMsg(accs[1].acc.GetAddress())}
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[1].priv}, []uint64{1}, []uint64{0}
+				msgs = []sdk.Msg{testdata.NewTestMsg(accounts[1].acc.GetAddress())}
 				suite.txBuilder.SetMsgs(msgs...)
 				suite.txBuilder.SetFeeAmount(feeAmount)
 				suite.txBuilder.SetGasLimit(gasLimit)
 
 				// Manually create tx, and remove signature.
-				tx, err := suite.CreateTestTx(suite.ctx, privs, accNums, accSeqs, suite.ctx.ChainID(), signing.SignMode_SIGN_MODE_DIRECT)
-				require.NoError(t, err)
+				tx, err := suite.CreateTestTx(privs, accNums, accSeqs, suite.ctx.ChainID())
+				suite.Require().NoError(err)
 				txBuilder, err := suite.clientCtx.TxConfig.WrapTxBuilder(tx)
-				require.NoError(t, err)
-				require.NoError(t, txBuilder.SetSignatures())
+				suite.Require().NoError(err)
+				suite.Require().NoError(txBuilder.SetSignatures())
 
 				// Run anteHandler manually, expect ErrNoSignatures.
 				_, err = suite.anteHandler(suite.ctx, txBuilder.GetTx(), false)
-				require.Error(t, err)
-				require.True(t, errors.Is(err, sdkerrors.ErrNoSignatures))
+				suite.Require().Error(err)
+				suite.Require().True(errors.Is(err, sdkerrors.ErrNoSignatures))
 
 				// Make sure public key has not been set.
-				acc1 = suite.accountKeeper.GetAccount(suite.ctx, accs[1].acc.GetAddress())
-				require.Nil(t, acc1.GetPubKey())
+				acc1 = suite.app.AccountKeeper.GetAccount(suite.ctx, accounts[1].acc.GetAddress())
+				suite.Require().Nil(acc1.GetPubKey())
 
 				// Set incorrect accSeq, to generate incorrect signature.
-				privs, accNums, accSeqs = []cryptotypes.PrivKey{accs[1].priv}, []uint64{1}, []uint64{1}
-
-				return TestCaseArgs{
-					accNums: accNums,
-					accSeqs: accSeqs,
-					msgs:    msgs,
-					privs:   privs,
-				}
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[1].priv}, []uint64{1}, []uint64{1}
 			},
 			false,
 			false,
@@ -1173,54 +875,11 @@ func TestAnteHandlerSetPubKey(t *testing.T) {
 		},
 		{
 			"make sure previous public key has been set after wrong signature",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(2)
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-
-				// Make sure public key has not been set from previous test.
-				acc1 := suite.accountKeeper.GetAccount(suite.ctx, accs[1].acc.GetAddress())
-				require.Nil(t, acc1.GetPubKey())
-
-				privs, accNums, accSeqs := []cryptotypes.PrivKey{accs[1].priv}, []uint64{1}, []uint64{0}
-				msgs := []sdk.Msg{testdata.NewTestMsg(accs[1].acc.GetAddress())}
-				suite.txBuilder.SetMsgs(msgs...)
-				suite.txBuilder.SetFeeAmount(feeAmount)
-				suite.txBuilder.SetGasLimit(gasLimit)
-
-				// Manually create tx, and remove signature.
-				tx, err := suite.CreateTestTx(suite.ctx, privs, accNums, accSeqs, suite.ctx.ChainID(), signing.SignMode_SIGN_MODE_DIRECT)
-				require.NoError(t, err)
-				txBuilder, err := suite.clientCtx.TxConfig.WrapTxBuilder(tx)
-				require.NoError(t, err)
-				require.NoError(t, txBuilder.SetSignatures())
-
-				// Run anteHandler manually, expect ErrNoSignatures.
-				_, err = suite.anteHandler(suite.ctx, txBuilder.GetTx(), false)
-				require.Error(t, err)
-				require.True(t, errors.Is(err, sdkerrors.ErrNoSignatures))
-
-				// Make sure public key has not been set.
-				acc1 = suite.accountKeeper.GetAccount(suite.ctx, accs[1].acc.GetAddress())
-				require.Nil(t, acc1.GetPubKey())
-
-				// Set incorrect accSeq, to generate incorrect signature.
-				privs, accNums, accSeqs = []cryptotypes.PrivKey{accs[1].priv}, []uint64{1}, []uint64{1}
-
-				suite.ctx, err = suite.DeliverMsgs(t, privs, msgs, feeAmount, gasLimit, accNums, accSeqs, suite.ctx.ChainID(), false)
-				require.Error(t, err)
-
+			func() {
 				// Make sure public key has been set, as SetPubKeyDecorator
 				// is called before all signature verification decorators.
-				acc1 = suite.accountKeeper.GetAccount(suite.ctx, accs[1].acc.GetAddress())
-				require.Equal(t, acc1.GetPubKey(), accs[1].priv.PubKey())
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-
-				return TestCaseArgs{
-					accNums: accNums,
-					accSeqs: accSeqs,
-					msgs:    msgs,
-					privs:   privs,
-				}
+				acc1 := suite.app.AccountKeeper.GetAccount(suite.ctx, accounts[1].acc.GetAddress())
+				suite.Require().Equal(acc1.GetPubKey(), accounts[1].priv.PubKey())
 			},
 			false,
 			false,
@@ -1229,15 +888,11 @@ func TestAnteHandlerSetPubKey(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("Case %s", tc.desc), func(t *testing.T) {
-			suite := SetupTestSuite(t, false)
+		suite.Run(fmt.Sprintf("Case %s", tc.desc), func() {
 			suite.txBuilder = suite.clientCtx.TxConfig.NewTxBuilder()
-			args := tc.malleate(suite)
-			args.chainID = suite.ctx.ChainID()
-			args.feeAmount = feeAmount
-			args.gasLimit = gasLimit
+			tc.malleate()
 
-			suite.RunTestCase(t, tc, args)
+			suite.RunTestCase(privs, msgs, feeAmount, gasLimit, accNums, accSeqs, suite.ctx.ChainID(), tc)
 		})
 	}
 }
@@ -1251,9 +906,9 @@ func generatePubKeysAndSignatures(n int, msg []byte, _ bool) (pubkeys []cryptoty
 		// TODO: also generate ed25519 keys as below when ed25519 keys are
 		//  actually supported, https://github.com/cosmos/cosmos-sdk/issues/4789
 		// for now this fails:
-		// if rand.Int63()%2 == 0 {
+		//if rand.Int63()%2 == 0 {
 		//	privkey = ed25519.GenPrivKey()
-		// } else {
+		//} else {
 		//	privkey = secp256k1.GenPrivKey()
 		//}
 
@@ -1269,9 +924,9 @@ func expectedGasCostByKeys(pubkeys []cryptotypes.PubKey) uint64 {
 		pubkeyType := strings.ToLower(fmt.Sprintf("%T", pubkey))
 		switch {
 		case strings.Contains(pubkeyType, "ed25519"):
-			cost += authtypes.DefaultParams().SigVerifyCostED25519
+			cost += types.DefaultParams().SigVerifyCostED25519
 		case strings.Contains(pubkeyType, "secp256k1"):
-			cost += authtypes.DefaultParams().SigVerifyCostSecp256k1
+			cost += types.DefaultParams().SigVerifyCostSecp256k1
 		default:
 			panic("unexpected key type")
 		}
@@ -1313,30 +968,26 @@ func TestCountSubkeys(t *testing.T) {
 	}
 }
 
-func TestAnteHandlerSigLimitExceeded(t *testing.T) {
+func (suite *AnteTestSuite) TestAnteHandlerSigLimitExceeded() {
+	suite.SetupTest(false) // setup
+
+	// Same data for every test cases
+	accounts := suite.CreateTestAccounts(8)
+	var addrs []sdk.AccAddress
+	var privs []cryptotypes.PrivKey
+	for i := 0; i < 8; i++ {
+		addrs = append(addrs, accounts[i].acc.GetAddress())
+		privs = append(privs, accounts[i].priv)
+	}
+	msgs := []sdk.Msg{testdata.NewTestMsg(addrs...)}
+	accNums, accSeqs := []uint64{0, 1, 2, 3, 4, 5, 6, 7}, []uint64{0, 0, 0, 0, 0, 0, 0, 0}
+	feeAmount := testdata.NewTestFeeAmount()
+	gasLimit := testdata.NewTestGasLimit()
+
 	testCases := []TestCase{
 		{
 			"test rejection logic",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				accs := suite.CreateTestAccounts(8)
-				var (
-					addrs []sdk.AccAddress
-					privs []cryptotypes.PrivKey
-				)
-				for i := 0; i < 8; i++ {
-					addrs = append(addrs, accs[i].acc.GetAddress())
-					privs = append(privs, accs[i].priv)
-				}
-
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-
-				return TestCaseArgs{
-					accNums: []uint64{0, 1, 2, 3, 4, 5, 6, 7},
-					accSeqs: []uint64{0, 0, 0, 0, 0, 0, 0, 0},
-					msgs:    []sdk.Msg{testdata.NewTestMsg(addrs...)},
-					privs:   privs,
-				}
-			},
+			func() {},
 			false,
 			false,
 			sdkerrors.ErrTooManySignatures,
@@ -1344,55 +995,60 @@ func TestAnteHandlerSigLimitExceeded(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("Case %s", tc.desc), func(t *testing.T) {
-			suite := SetupTestSuite(t, false)
+		suite.Run(fmt.Sprintf("Case %s", tc.desc), func() {
 			suite.txBuilder = suite.clientCtx.TxConfig.NewTxBuilder()
-			args := tc.malleate(suite)
-			args.chainID = suite.ctx.ChainID()
-			args.feeAmount = testdata.NewTestFeeAmount()
-			args.gasLimit = testdata.NewTestGasLimit()
+			tc.malleate()
 
-			suite.RunTestCase(t, tc, args)
+			suite.RunTestCase(privs, msgs, feeAmount, gasLimit, accNums, accSeqs, suite.ctx.ChainID(), tc)
 		})
 	}
 }
 
 // Test custom SignatureVerificationGasConsumer
-func TestCustomSignatureVerificationGasConsumer(t *testing.T) {
+func (suite *AnteTestSuite) TestCustomSignatureVerificationGasConsumer() {
+	suite.SetupTest(false) // setup
+
+	// setup an ante handler that only accepts PubKeyEd25519
+	anteHandler, err := ante.NewAnteHandler(
+		ante.HandlerOptions{
+			AccountKeeper:   suite.app.AccountKeeper,
+			BankKeeper:      suite.app.BankKeeper,
+			FeegrantKeeper:  suite.app.FeeGrantKeeper,
+			SignModeHandler: suite.clientCtx.TxConfig.SignModeHandler(),
+			SigGasConsumer: func(meter sdk.GasMeter, sig signing.SignatureV2, params types.Params) error {
+				switch pubkey := sig.PubKey.(type) {
+				case *ed25519.PubKey:
+					meter.ConsumeGas(params.SigVerifyCostED25519, "ante verify: ed25519")
+					return nil
+				default:
+					return sdkerrors.Wrapf(sdkerrors.ErrInvalidPubKey, "unrecognized public key type: %T", pubkey)
+				}
+			},
+		},
+	)
+
+	suite.Require().NoError(err)
+	suite.anteHandler = anteHandler
+
+	// Same data for every test cases
+	accounts := suite.CreateTestAccounts(1)
+	feeAmount := testdata.NewTestFeeAmount()
+	gasLimit := testdata.NewTestGasLimit()
+
+	// Variable data per test case
+	var (
+		accNums []uint64
+		msgs    []sdk.Msg
+		privs   []cryptotypes.PrivKey
+		accSeqs []uint64
+	)
+
 	testCases := []TestCase{
 		{
 			"verify that an secp256k1 account gets rejected",
-			func(suite *AnteTestSuite) TestCaseArgs {
-				// setup an ante handler that only accepts PubKeyEd25519
-				anteHandler, err := ante.NewAnteHandler(
-					ante.HandlerOptions{
-						AccountKeeper:   suite.accountKeeper,
-						BankKeeper:      suite.bankKeeper,
-						FeegrantKeeper:  suite.feeGrantKeeper,
-						SignModeHandler: suite.clientCtx.TxConfig.SignModeHandler(),
-						SigGasConsumer: func(meter storetypes.GasMeter, sig signing.SignatureV2, params authtypes.Params) error {
-							switch pubkey := sig.PubKey.(type) {
-							case *ed25519.PubKey:
-								meter.ConsumeGas(params.SigVerifyCostED25519, "ante verify: ed25519")
-								return nil
-							default:
-								return sdkerrors.Wrapf(sdkerrors.ErrInvalidPubKey, "unrecognized public key type: %T", pubkey)
-							}
-						},
-					},
-				)
-				require.NoError(t, err)
-				suite.anteHandler = anteHandler
-
-				accs := suite.CreateTestAccounts(1)
-				suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-
-				return TestCaseArgs{
-					accNums: []uint64{0},
-					accSeqs: []uint64{0},
-					msgs:    []sdk.Msg{testdata.NewTestMsg(accs[0].acc.GetAddress())},
-					privs:   []cryptotypes.PrivKey{accs[0].priv},
-				}
+			func() {
+				msgs = []sdk.Msg{testdata.NewTestMsg(accounts[0].acc.GetAddress())}
+				privs, accNums, accSeqs = []cryptotypes.PrivKey{accounts[0].priv}, []uint64{0}, []uint64{0}
 			},
 			false,
 			false,
@@ -1401,99 +1057,92 @@ func TestCustomSignatureVerificationGasConsumer(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("Case %s", tc.desc), func(t *testing.T) {
-			suite := SetupTestSuite(t, false)
+		suite.Run(fmt.Sprintf("Case %s", tc.desc), func() {
 			suite.txBuilder = suite.clientCtx.TxConfig.NewTxBuilder()
-			args := tc.malleate(suite)
-			args.chainID = suite.ctx.ChainID()
-			args.feeAmount = testdata.NewTestFeeAmount()
-			args.gasLimit = testdata.NewTestGasLimit()
+			tc.malleate()
 
-			suite.RunTestCase(t, tc, args)
+			suite.RunTestCase(privs, msgs, feeAmount, gasLimit, accNums, accSeqs, suite.ctx.ChainID(), tc)
 		})
 	}
 }
 
-func TestAnteHandlerReCheck(t *testing.T) {
-	suite := SetupTestSuite(t, false)
+func (suite *AnteTestSuite) TestAnteHandlerReCheck() {
+	suite.SetupTest(false) // setup
 	// Set recheck=true
 	suite.ctx = suite.ctx.WithIsReCheckTx(true)
 	suite.txBuilder = suite.clientCtx.TxConfig.NewTxBuilder()
 
-	// Same data for every test case
-	accs := suite.CreateTestAccounts(1)
+	// Same data for every test cases
+	accounts := suite.CreateTestAccounts(1)
 
 	feeAmount := testdata.NewTestFeeAmount()
 	gasLimit := testdata.NewTestGasLimit()
 	suite.txBuilder.SetFeeAmount(feeAmount)
 	suite.txBuilder.SetGasLimit(gasLimit)
 
-	msg := testdata.NewTestMsg(accs[0].acc.GetAddress())
+	msg := testdata.NewTestMsg(accounts[0].acc.GetAddress())
 	msgs := []sdk.Msg{msg}
-	require.NoError(t, suite.txBuilder.SetMsgs(msgs...))
+	suite.Require().NoError(suite.txBuilder.SetMsgs(msgs...))
 
 	suite.txBuilder.SetMemo("thisisatestmemo")
 
 	// test that operations skipped on recheck do not run
-	privs, accNums, accSeqs := []cryptotypes.PrivKey{accs[0].priv}, []uint64{0}, []uint64{0}
-	tx, err := suite.CreateTestTx(suite.ctx, privs, accNums, accSeqs, suite.ctx.ChainID(), signing.SignMode_SIGN_MODE_DIRECT)
-	require.NoError(t, err)
+	privs, accNums, accSeqs := []cryptotypes.PrivKey{accounts[0].priv}, []uint64{0}, []uint64{0}
+	tx, err := suite.CreateTestTx(privs, accNums, accSeqs, suite.ctx.ChainID())
+	suite.Require().NoError(err)
 
 	// make signature array empty which would normally cause ValidateBasicDecorator and SigVerificationDecorator fail
 	// since these decorators don't run on recheck, the tx should pass the antehandler
 	txBuilder, err := suite.clientCtx.TxConfig.WrapTxBuilder(tx)
-	require.NoError(t, err)
+	suite.Require().NoError(err)
 
-	suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
 	_, err = suite.anteHandler(suite.ctx, txBuilder.GetTx(), false)
-	require.Nil(t, err, "AnteHandler errored on recheck unexpectedly: %v", err)
+	suite.Require().Nil(err, "AnteHandler errored on recheck unexpectedly: %v", err)
 
-	tx, err = suite.CreateTestTx(suite.ctx, privs, accNums, accSeqs, suite.ctx.ChainID(), signing.SignMode_SIGN_MODE_DIRECT)
-	require.NoError(t, err)
+	tx, err = suite.CreateTestTx(privs, accNums, accSeqs, suite.ctx.ChainID())
+	suite.Require().NoError(err)
 	txBytes, err := json.Marshal(tx)
-	require.Nil(t, err, "Error marshalling tx: %v", err)
+	suite.Require().Nil(err, "Error marshalling tx: %v", err)
 	suite.ctx = suite.ctx.WithTxBytes(txBytes)
 
 	// require that state machine param-dependent checking is still run on recheck since parameters can change between check and recheck
 	testCases := []struct {
 		name   string
-		params authtypes.Params
+		params types.Params
 	}{
-		{"memo size check", authtypes.NewParams(1, authtypes.DefaultTxSigLimit, authtypes.DefaultTxSizeCostPerByte, authtypes.DefaultSigVerifyCostED25519, authtypes.DefaultSigVerifyCostSecp256k1)},
-		{"txsize check", authtypes.NewParams(authtypes.DefaultMaxMemoCharacters, authtypes.DefaultTxSigLimit, 10000000, authtypes.DefaultSigVerifyCostED25519, authtypes.DefaultSigVerifyCostSecp256k1)},
-		{"sig verify cost check", authtypes.NewParams(authtypes.DefaultMaxMemoCharacters, authtypes.DefaultTxSigLimit, authtypes.DefaultTxSizeCostPerByte, authtypes.DefaultSigVerifyCostED25519, 100000000)},
+		{"memo size check", types.NewParams(1, types.DefaultTxSigLimit, types.DefaultTxSizeCostPerByte, types.DefaultSigVerifyCostED25519, types.DefaultSigVerifyCostSecp256k1)},
+		{"txsize check", types.NewParams(types.DefaultMaxMemoCharacters, types.DefaultTxSigLimit, 10000000, types.DefaultSigVerifyCostED25519, types.DefaultSigVerifyCostSecp256k1)},
+		{"sig verify cost check", types.NewParams(types.DefaultMaxMemoCharacters, types.DefaultTxSigLimit, types.DefaultTxSizeCostPerByte, types.DefaultSigVerifyCostED25519, 100000000)},
 	}
-
 	for _, tc := range testCases {
-
 		// set testcase parameters
-		err := suite.accountKeeper.SetParams(suite.ctx, tc.params)
-		require.NoError(t, err)
+		suite.app.AccountKeeper.SetParams(suite.ctx, tc.params)
 
-		_, err = suite.anteHandler(suite.ctx, tx, false)
+		_, err := suite.anteHandler(suite.ctx, tx, false)
 
-		require.NotNil(t, err, "tx does not fail on recheck with updated params in test case: %s", tc.name)
+		suite.Require().NotNil(err, "tx does not fail on recheck with updated params in test case: %s", tc.name)
 
 		// reset parameters to default values
-		err = suite.accountKeeper.SetParams(suite.ctx, authtypes.DefaultParams())
-		require.NoError(t, err)
+		suite.app.AccountKeeper.SetParams(suite.ctx, types.DefaultParams())
 	}
 
-	suite.bankKeeper.EXPECT().SendCoinsFromAccountToModule(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(sdkerrors.ErrInsufficientFee)
 	// require that local mempool fee check is still run on recheck since validator may change minFee between check and recheck
 	// create new minimum gas price so antehandler fails on recheck
 	suite.ctx = suite.ctx.WithMinGasPrices([]sdk.DecCoin{{
 		Denom:  "dnecoin", // fee does not have this denom
-		Amount: math.LegacyNewDec(5),
+		Amount: sdk.NewDec(5),
 	}})
 	_, err = suite.anteHandler(suite.ctx, tx, false)
-	require.NotNil(t, err, "antehandler on recheck did not fail when mingasPrice was changed")
+	suite.Require().NotNil(err, "antehandler on recheck did not fail when mingasPrice was changed")
 	// reset min gasprice
 	suite.ctx = suite.ctx.WithMinGasPrices(sdk.DecCoins{})
 
 	// remove funds for account so antehandler fails on recheck
-	suite.accountKeeper.SetAccount(suite.ctx, accs[0].acc)
+	suite.app.AccountKeeper.SetAccount(suite.ctx, accounts[0].acc)
+	balances := suite.app.BankKeeper.GetAllBalances(suite.ctx, accounts[0].acc.GetAddress())
+	err = suite.app.BankKeeper.SendCoinsFromAccountToModule(suite.ctx, accounts[0].acc.GetAddress(), minttypes.ModuleName, balances)
+	suite.Require().NoError(err)
 
 	_, err = suite.anteHandler(suite.ctx, tx, false)
-	require.NotNil(t, err, "antehandler on recheck did not fail once feePayer no longer has sufficient funds")
+	suite.Require().NotNil(err, "antehandler on recheck did not fail once feePayer no longer has sufficient funds")
 }

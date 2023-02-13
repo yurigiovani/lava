@@ -4,22 +4,17 @@ import (
 	"errors"
 	"testing"
 
-	abci "github.com/cometbft/cometbft/abci/types"
-	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/stretchr/testify/require"
+	abci "github.com/tendermint/tendermint/abci/types"
+	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 
-	"cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
-	"github.com/cosmos/cosmos-sdk/testutil/configurator"
-	"github.com/cosmos/cosmos-sdk/testutil/sims"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
-	"github.com/cosmos/cosmos-sdk/x/slashing/keeper"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/cosmos/cosmos-sdk/x/slashing/types"
-	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
@@ -31,6 +26,20 @@ var (
 	valAddr = sdk.AccAddress(valKey.PubKey().Address())
 )
 
+func checkValidator(t *testing.T, app *simapp.SimApp, _ sdk.AccAddress, expFound bool) stakingtypes.Validator {
+	ctxCheck := app.BaseApp.NewContext(true, tmproto.Header{})
+	validator, found := app.StakingKeeper.GetValidator(ctxCheck, sdk.ValAddress(addr1))
+	require.Equal(t, expFound, found)
+	return validator
+}
+
+func checkValidatorSigningInfo(t *testing.T, app *simapp.SimApp, addr sdk.ConsAddress, expFound bool) types.ValidatorSigningInfo {
+	ctxCheck := app.BaseApp.NewContext(true, tmproto.Header{})
+	signingInfo, found := app.SlashingKeeper.GetValidatorSigningInfo(ctxCheck, addr)
+	require.Equal(t, expFound, found)
+	return signingInfo
+}
+
 func TestSlashingMsgs(t *testing.T) {
 	genTokens := sdk.TokensFromConsensusPower(42, sdk.DefaultPowerReduction)
 	bondTokens := sdk.TokensFromConsensusPower(10, sdk.DefaultPowerReduction)
@@ -40,66 +49,45 @@ func TestSlashingMsgs(t *testing.T) {
 	acc1 := &authtypes.BaseAccount{
 		Address: addr1.String(),
 	}
-	accs := []sims.GenesisAccount{{GenesisAccount: acc1, Coins: sdk.Coins{genCoin}}}
+	accs := authtypes.GenesisAccounts{acc1}
+	balances := []banktypes.Balance{
+		{
+			Address: addr1.String(),
+			Coins:   sdk.Coins{genCoin},
+		},
+	}
 
-	startupCfg := sims.DefaultStartUpConfig()
-	startupCfg.GenesisAccounts = accs
-
-	var (
-		stakingKeeper  *stakingkeeper.Keeper
-		bankKeeper     bankkeeper.Keeper
-		slashingKeeper keeper.Keeper
-	)
-
-	app, err := sims.SetupWithConfiguration(configurator.NewAppConfig(
-		configurator.ParamsModule(),
-		configurator.AuthModule(),
-		configurator.StakingModule(),
-		configurator.SlashingModule(),
-		configurator.TxModule(),
-		configurator.ConsensusModule(),
-		configurator.BankModule()),
-		startupCfg, &stakingKeeper, &bankKeeper, &slashingKeeper)
-
-	baseApp := app.BaseApp
-
-	ctxCheck := baseApp.NewContext(true, cmtproto.Header{})
-	require.True(t, sdk.Coins{genCoin}.Equal(bankKeeper.GetAllBalances(ctxCheck, addr1)))
-
-	require.NoError(t, err)
+	app := simapp.SetupWithGenesisAccounts(t, accs, balances...)
+	simapp.CheckBalance(t, app, addr1, sdk.Coins{genCoin})
 
 	description := stakingtypes.NewDescription("foo_moniker", "", "", "", "")
-	commission := stakingtypes.NewCommissionRates(math.LegacyZeroDec(), math.LegacyZeroDec(), math.LegacyZeroDec())
+	commission := stakingtypes.NewCommissionRates(sdk.ZeroDec(), sdk.ZeroDec(), sdk.ZeroDec())
 
 	createValidatorMsg, err := stakingtypes.NewMsgCreateValidator(
-		sdk.ValAddress(addr1), valKey.PubKey(), bondCoin, description, commission, math.OneInt(),
+		sdk.ValAddress(addr1), valKey.PubKey(), bondCoin, description, commission, sdk.OneInt(),
 	)
 	require.NoError(t, err)
 
-	header := cmtproto.Header{Height: app.LastBlockHeight() + 1}
-	txConfig := moduletestutil.MakeTestEncodingConfig().TxConfig
-	_, _, err = sims.SignCheckDeliver(t, txConfig, app.BaseApp, header, []sdk.Msg{createValidatorMsg}, "", []uint64{0}, []uint64{0}, true, true, priv1)
+	header := tmproto.Header{Height: app.LastBlockHeight() + 1}
+	txGen := simapp.MakeTestEncodingConfig().TxConfig
+	_, _, err = simapp.SignCheckDeliver(t, txGen, app.BaseApp, header, []sdk.Msg{createValidatorMsg}, "", []uint64{0}, []uint64{0}, true, true, priv1)
 	require.NoError(t, err)
-	require.True(t, sdk.Coins{genCoin.Sub(bondCoin)}.Equal(bankKeeper.GetAllBalances(ctxCheck, addr1)))
+	simapp.CheckBalance(t, app, addr1, sdk.Coins{genCoin.Sub(bondCoin)})
 
-	header = cmtproto.Header{Height: app.LastBlockHeight() + 1}
+	header = tmproto.Header{Height: app.LastBlockHeight() + 1}
 	app.BeginBlock(abci.RequestBeginBlock{Header: header})
 
-	ctxCheck = baseApp.NewContext(true, cmtproto.Header{})
-	validator, found := stakingKeeper.GetValidator(ctxCheck, sdk.ValAddress(addr1))
-	require.True(t, found)
+	validator := checkValidator(t, app, addr1, true)
 	require.Equal(t, sdk.ValAddress(addr1).String(), validator.OperatorAddress)
 	require.Equal(t, stakingtypes.Bonded, validator.Status)
-	require.True(math.IntEq(t, bondTokens, validator.BondedTokens()))
+	require.True(sdk.IntEq(t, bondTokens, validator.BondedTokens()))
 	unjailMsg := &types.MsgUnjail{ValidatorAddr: sdk.ValAddress(addr1).String()}
 
-	ctxCheck = app.BaseApp.NewContext(true, cmtproto.Header{})
-	_, found = slashingKeeper.GetValidatorSigningInfo(ctxCheck, sdk.ConsAddress(valAddr))
-	require.True(t, found)
+	checkValidatorSigningInfo(t, app, sdk.ConsAddress(valAddr), true)
 
 	// unjail should fail with unknown validator
-	header = cmtproto.Header{Height: app.LastBlockHeight() + 1}
-	_, res, err := sims.SignCheckDeliver(t, txConfig, app.BaseApp, header, []sdk.Msg{unjailMsg}, "", []uint64{0}, []uint64{1}, false, false, priv1)
+	header = tmproto.Header{Height: app.LastBlockHeight() + 1}
+	_, res, err := simapp.SignCheckDeliver(t, txGen, app.BaseApp, header, []sdk.Msg{unjailMsg}, "", []uint64{0}, []uint64{1}, false, false, priv1)
 	require.Error(t, err)
 	require.Nil(t, res)
 	require.True(t, errors.Is(types.ErrValidatorNotJailed, err))

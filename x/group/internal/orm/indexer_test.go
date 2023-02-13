@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"testing"
 
-	"cosmossdk.io/store/prefix"
-	storetypes "cosmossdk.io/store/types"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
+	"github.com/cosmos/cosmos-sdk/store/prefix"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/cosmos/cosmos-sdk/x/group/errors"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewIndexer(t *testing.T) {
@@ -164,7 +163,7 @@ func TestIndexerOnDelete(t *testing.T) {
 
 	var multiKeyIndex MultiKeyIndex
 	ctx := NewMockContext()
-	storeKey := storetypes.NewKVStoreKey("test")
+	storeKey := sdk.NewKVStoreKey("test")
 	store := prefix.NewStore(ctx.KVStore(storeKey), []byte{multiKeyIndex.prefix})
 
 	specs := map[string]struct {
@@ -246,7 +245,7 @@ func TestIndexerOnUpdate(t *testing.T) {
 
 	var multiKeyIndex MultiKeyIndex
 	ctx := NewMockContext()
-	storeKey := storetypes.NewKVStoreKey("test")
+	storeKey := sdk.NewKVStoreKey("test")
 	store := prefix.NewStore(ctx.KVStore(storeKey), []byte{multiKeyIndex.prefix})
 
 	specs := map[string]struct {
@@ -254,7 +253,7 @@ func TestIndexerOnUpdate(t *testing.T) {
 		expAddedKeys   []RowID
 		expDeletedKeys []RowID
 		expErr         error
-		addFunc        func(storetypes.KVStore, interface{}, RowID) error
+		addFunc        func(sdk.KVStore, interface{}, RowID) error
 	}{
 		"single key - same key, no update": {
 			srcFunc: func(value interface{}) ([]interface{}, error) {
@@ -334,7 +333,7 @@ func TestIndexerOnUpdate(t *testing.T) {
 				keys := []uint64{1, 2}
 				return []interface{}{keys[value.(int)]}, nil
 			},
-			addFunc: func(_ storetypes.KVStore, _ interface{}, _ RowID) error {
+			addFunc: func(_ sdk.KVStore, _ interface{}, _ RowID) error {
 				return stdErrors.New("test")
 			},
 			expErr: stdErrors.New("test"),
@@ -376,7 +375,7 @@ func TestUniqueKeyAddFunc(t *testing.T) {
 
 	specs := map[string]struct {
 		srcKey           []byte
-		expErr           *sdkerrors.Error //nolint:staticcheck // SA1019: sdkerrors.Error is deprecated: the type has been moved to cosmossdk.io/errors module. Please use the above module instead of this package.
+		expErr           *sdkerrors.Error
 		expExistingEntry []byte
 	}{
 		"create when not exists": {
@@ -398,7 +397,7 @@ func TestUniqueKeyAddFunc(t *testing.T) {
 	}
 	for msg, spec := range specs {
 		t.Run(msg, func(t *testing.T) {
-			storeKey := storetypes.NewKVStoreKey("test")
+			storeKey := sdk.NewKVStoreKey("test")
 			store := NewMockContext().KVStore(storeKey)
 			store.Set(presetKey, []byte{})
 
@@ -419,7 +418,7 @@ func TestMultiKeyAddFunc(t *testing.T) {
 
 	specs := map[string]struct {
 		srcKey           []byte
-		expErr           *sdkerrors.Error //nolint:staticcheck // SA1019: sdkerrors.Error is deprecated: the type has been moved to cosmossdk.io/errors module. Please use the above module instead of this package.
+		expErr           *sdkerrors.Error
 		expExistingEntry []byte
 	}{
 		"create when not exists": {
@@ -441,7 +440,7 @@ func TestMultiKeyAddFunc(t *testing.T) {
 	}
 	for msg, spec := range specs {
 		t.Run(msg, func(t *testing.T) {
-			storeKey := storetypes.NewKVStoreKey("test")
+			storeKey := sdk.NewKVStoreKey("test")
 			store := NewMockContext().KVStore(storeKey)
 			store.Set(presetKey, []byte{})
 
@@ -562,7 +561,7 @@ type addFuncRecorder struct {
 	called             bool
 }
 
-func (c *addFuncRecorder) add(_ storetypes.KVStore, key interface{}, rowID RowID) error {
+func (c *addFuncRecorder) add(_ sdk.KVStore, key interface{}, rowID RowID) error {
 	c.secondaryIndexKeys = append(c.secondaryIndexKeys, key)
 	c.rowIDs = append(c.rowIDs, rowID)
 	c.called = true

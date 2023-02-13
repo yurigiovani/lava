@@ -92,9 +92,12 @@ func (coin Coin) IsLTE(other Coin) bool {
 }
 
 // IsEqual returns true if the two sets of Coins have the same value
-// Deprecated: Use Coin.Equal instead.
 func (coin Coin) IsEqual(other Coin) bool {
-	return coin.Equal(other)
+	if coin.Denom != other.Denom {
+		panic(fmt.Sprintf("invalid coin denominations; %s, %s", coin.Denom, other.Denom))
+	}
+
+	return coin.Amount.Equal(other.Amount)
 }
 
 // Add adds amounts of two coins with same denom. If the coins differ in denom then
@@ -131,7 +134,7 @@ func (coin Coin) SafeSub(coinB Coin) (Coin, error) {
 
 	res := Coin{coin.Denom, coin.Amount.Sub(coinB.Amount)}
 	if res.IsNegative() {
-		return Coin{}, fmt.Errorf("negative coin amount: %s", res)
+		return Coin{}, fmt.Errorf("negative coin amount")
 	}
 
 	return res, nil
@@ -244,16 +247,18 @@ func (coins Coins) Validate() error {
 		}
 
 		lowDenom := coins[0].Denom
+		seenDenoms := make(map[string]bool)
+		seenDenoms[lowDenom] = true
 
 		for _, coin := range coins[1:] {
+			if seenDenoms[coin.Denom] {
+				return fmt.Errorf("duplicate denomination %s", coin.Denom)
+			}
 			if err := ValidateDenom(coin.Denom); err != nil {
 				return err
 			}
-			if coin.Denom < lowDenom {
+			if coin.Denom <= lowDenom {
 				return fmt.Errorf("denomination %s is not sorted", coin.Denom)
-			}
-			if coin.Denom == lowDenom {
-				return fmt.Errorf("duplicate denomination %s", coin.Denom)
 			}
 			if !coin.IsPositive() {
 				return fmt.Errorf("coin %s amount is not positive", coin.Denom)
@@ -261,6 +266,7 @@ func (coins Coins) Validate() error {
 
 			// we compare each coin against the last denom
 			lowDenom = coin.Denom
+			seenDenoms[coin.Denom] = true
 		}
 
 		return nil
@@ -280,15 +286,6 @@ func (coins Coins) isSorted() bool {
 // valid and unique denomination (i.e no duplicates).
 func (coins Coins) IsValid() bool {
 	return coins.Validate() == nil
-}
-
-// Denoms returns all denoms associated with a Coins object
-func (coins Coins) Denoms() []string {
-	res := make([]string, len(coins))
-	for i, coin := range coins {
-		res[i] = coin.Denom
-	}
-	return res
 }
 
 // Add adds two sets of coins.
@@ -331,7 +328,7 @@ func (coins Coins) safeAdd(coinsB Coins) (coalesced Coins) {
 		}
 	}
 
-	for denom, cL := range uniqCoins { //#nosec
+	for denom, cL := range uniqCoins {
 		comboCoin := Coin{Denom: denom, Amount: NewInt(0)}
 		for _, c := range cL {
 			comboCoin = comboCoin.Add(c)
@@ -339,9 +336,6 @@ func (coins Coins) safeAdd(coinsB Coins) (coalesced Coins) {
 		if !comboCoin.IsZero() {
 			coalesced = append(coalesced, comboCoin)
 		}
-	}
-	if coalesced == nil {
-		return Coins{}
 	}
 	return coalesced.Sort()
 }
@@ -421,7 +415,7 @@ func (coins Coins) SafeMulInt(x Int) (Coins, bool) {
 }
 
 // QuoInt performs the scalar division of coins with a `divisor`
-// All coins are divided by x and truncated.
+// All coins are divided by x and trucated.
 // e.g.
 // {2A, 30B} / 2 = {1A, 15B}
 // {2A} / 2 = {1A}
@@ -463,7 +457,7 @@ func (coins Coins) SafeQuoInt(x Int) (Coins, bool) {
 //	a.IsAllLTE(a.Max(b))
 //	b.IsAllLTE(a.Max(b))
 //	a.IsAllLTE(c) && b.IsAllLTE(c) == a.Max(b).IsAllLTE(c)
-//	a.Add(b...).Equal(a.Min(b).Add(a.Max(b)...))
+//	a.Add(b...).IsEqual(a.Min(b).Add(a.Max(b)...))
 //
 // E.g.
 // {1A, 3B, 2C}.Max({4A, 2B, 2C} == {4A, 3B, 2C})
@@ -509,7 +503,7 @@ func (coins Coins) Max(coinsB Coins) Coins {
 //	a.Min(b).IsAllLTE(a)
 //	a.Min(b).IsAllLTE(b)
 //	c.IsAllLTE(a) && c.IsAllLTE(b) == c.IsAllLTE(a.Min(b))
-//	a.Add(b...).Equal(a.Min(b).Add(a.Max(b)...))
+//	a.Add(b...).IsEqual(a.Min(b).Add(a.Max(b)...))
 //
 // E.g.
 // {1A, 3B, 2C}.Min({4A, 2B, 2C} == {1A, 2B, 2C})
@@ -652,8 +646,8 @@ func (coins Coins) IsZero() bool {
 	return true
 }
 
-// Equal returns true if the two sets of Coins have the same value
-func (coins Coins) Equal(coinsB Coins) bool {
+// IsEqual returns true if the two sets of Coins have the same value
+func (coins Coins) IsEqual(coinsB Coins) bool {
 	if len(coins) != len(coinsB) {
 		return false
 	}
@@ -662,7 +656,7 @@ func (coins Coins) Equal(coinsB Coins) bool {
 	coinsB = coinsB.Sort()
 
 	for i := 0; i < len(coins); i++ {
-		if !coins[i].Equal(coinsB[i]) {
+		if !coins[i].IsEqual(coinsB[i]) {
 			return false
 		}
 	}
@@ -786,15 +780,26 @@ func (coins Coins) negative() Coins {
 
 // removeZeroCoins removes all zero coins from the given coin set in-place.
 func removeZeroCoins(coins Coins) Coins {
-	nonZeros := make([]Coin, 0, len(coins))
-
-	for _, coin := range coins {
-		if !coin.IsZero() {
-			nonZeros = append(nonZeros, coin)
+	for i := 0; i < len(coins); i++ {
+		if coins[i].IsZero() {
+			break
+		} else if i == len(coins)-1 {
+			return coins
 		}
 	}
 
-	return nonZeros
+	var result []Coin
+	if len(coins) > 0 {
+		result = make([]Coin, 0, len(coins)-1)
+	}
+
+	for _, coin := range coins {
+		if !coin.IsZero() {
+			result = append(result, coin)
+		}
+	}
+
+	return result
 }
 
 //-----------------------------------------------------------------------------

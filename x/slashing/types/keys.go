@@ -17,6 +17,9 @@ const (
 
 	// RouterKey is the message route for slashing
 	RouterKey = ModuleName
+
+	// QuerierRoute is the querier route for slashing
+	QuerierRoute = ModuleName
 )
 
 // Keys for slashing store
@@ -27,9 +30,7 @@ const (
 // - 0x02<consAddrLen (1 Byte)><consAddress_Bytes><period_Bytes>: bool
 //
 // - 0x03<accAddrLen (1 Byte)><accAddr_Bytes>: cryptotypes.PubKey
-
 var (
-	ParamsKey                             = []byte{0x00} // Prefix for params key
 	ValidatorSigningInfoKeyPrefix         = []byte{0x01} // Prefix for signing info
 	ValidatorMissedBlockBitArrayKeyPrefix = []byte{0x02} // Prefix for missed block bit array
 	AddrPubkeyRelationKeyPrefix           = []byte{0x03} // Prefix for address-pubkey relation

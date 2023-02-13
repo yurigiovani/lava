@@ -14,31 +14,29 @@ import (
 	"syscall"
 	"time"
 
-	dbm "github.com/cosmos/cosmos-db"
-
-	cmtcmd "github.com/cometbft/cometbft/cmd/cometbft/commands"
-	cmtcfg "github.com/cometbft/cometbft/config"
-	cmtcli "github.com/cometbft/cometbft/libs/cli"
-	cmtflags "github.com/cometbft/cometbft/libs/cli/flags"
-	cmtlog "github.com/cometbft/cometbft/libs/log"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cast"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
-
-	"cosmossdk.io/store"
-	"cosmossdk.io/store/snapshots"
-	snapshottypes "cosmossdk.io/store/snapshots/types"
-	storetypes "cosmossdk.io/store/types"
+	tmcmd "github.com/tendermint/tendermint/cmd/tendermint/commands"
+	tmcfg "github.com/tendermint/tendermint/config"
+	tmlog "github.com/tendermint/tendermint/libs/log"
+	dbm "github.com/tendermint/tm-db"
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/server/config"
 	"github.com/cosmos/cosmos-sdk/server/types"
+	"github.com/cosmos/cosmos-sdk/snapshots"
+	snapshottypes "github.com/cosmos/cosmos-sdk/snapshots/types"
+	"github.com/cosmos/cosmos-sdk/store"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/types/mempool"
 	"github.com/cosmos/cosmos-sdk/version"
 )
+
+// DONTCOVER
 
 // ServerContextKey defines the context key used to retrieve a server.Context from
 // a command's Context.
@@ -47,8 +45,8 @@ const ServerContextKey = sdk.ContextKey("server.context")
 // server context
 type Context struct {
 	Viper  *viper.Viper
-	Config *cmtcfg.Config
-	Logger cmtlog.Logger
+	Config *tmcfg.Config
+	Logger tmlog.Logger
 }
 
 // ErrorCode contains the exit code for server exit.
@@ -63,12 +61,12 @@ func (e ErrorCode) Error() string {
 func NewDefaultContext() *Context {
 	return NewContext(
 		viper.New(),
-		cmtcfg.DefaultConfig(),
-		cmtlog.NewTMLogger(cmtlog.NewSyncWriter(os.Stdout)),
+		tmcfg.DefaultConfig(),
+		ZeroLogWrapper{log.Logger},
 	)
 }
 
-func NewContext(v *viper.Viper, config *cmtcfg.Config, logger cmtlog.Logger) *Context {
+func NewContext(v *viper.Viper, config *tmcfg.Config, logger tmlog.Logger) *Context {
 	return &Context{v, config, logger}
 }
 
@@ -92,8 +90,7 @@ func bindFlags(basename string, cmd *cobra.Command, v *viper.Viper) (err error) 
 			panic(err)
 		}
 
-		// Apply the viper config value to the flag when the flag is not set and
-		// viper has a value.
+		// Apply the viper config value to the flag when the flag is not set and viper has a value
 		if !f.Changed && v.IsSet(f.Name) {
 			val := v.Get(f.Name)
 			err = cmd.Flags().Set(f.Name, fmt.Sprintf("%v", val))
@@ -103,25 +100,25 @@ func bindFlags(basename string, cmd *cobra.Command, v *viper.Viper) (err error) 
 		}
 	})
 
-	return err
+	return nil
 }
 
 // InterceptConfigsPreRunHandler performs a pre-run function for the root daemon
 // application command. It will create a Viper literal and a default server
-// Context. The server CometBFT configuration will either be read and parsed
+// Context. The server Tendermint configuration will either be read and parsed
 // or created and saved to disk, where the server Context is updated to reflect
-// the CometBFT configuration. It takes custom app config template and config
-// settings to create a custom CometBFT configuration. If the custom template
+// the Tendermint configuration. It takes custom app config template and config
+// settings to create a custom Tendermint configuration. If the custom template
 // is empty, it uses default-template provided by the server. The Viper literal
 // is used to read and parse the application configuration. Command handlers can
-// fetch the server Context to get the CometBFT configuration or to get access
+// fetch the server Context to get the Tendermint configuration or to get access
 // to Viper.
-func InterceptConfigsPreRunHandler(cmd *cobra.Command, customAppConfigTemplate string, customAppConfig interface{}, cmtConfig *cmtcfg.Config) error {
+func InterceptConfigsPreRunHandler(cmd *cobra.Command, customAppConfigTemplate string, customAppConfig interface{}, tmConfig *tmcfg.Config) error {
 	serverCtx := NewDefaultContext()
 
 	// Get the executable name and configure the viper instance so that environmental
 	// variables are checked based off that name. The underscore character is used
-	// as a separator.
+	// as a separator
 	executableName, err := os.Executable()
 	if err != nil {
 		return err
@@ -129,48 +126,43 @@ func InterceptConfigsPreRunHandler(cmd *cobra.Command, customAppConfigTemplate s
 
 	basename := path.Base(executableName)
 
-	// configure the viper instance
+	// Configure the viper instance
 	if err := serverCtx.Viper.BindPFlags(cmd.Flags()); err != nil {
 		return err
 	}
 	if err := serverCtx.Viper.BindPFlags(cmd.PersistentFlags()); err != nil {
 		return err
 	}
-
 	serverCtx.Viper.SetEnvPrefix(basename)
 	serverCtx.Viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
 	serverCtx.Viper.AutomaticEnv()
 
 	// intercept configuration files, using both Viper instances separately
-	config, err := interceptConfigs(serverCtx.Viper, customAppConfigTemplate, customAppConfig, cmtConfig)
+	config, err := interceptConfigs(serverCtx.Viper, customAppConfigTemplate, customAppConfig, tmConfig)
 	if err != nil {
 		return err
 	}
 
-	// return value is a CometBFT configuration object
+	// return value is a tendermint configuration object
 	serverCtx.Config = config
 	if err = bindFlags(basename, cmd, serverCtx.Viper); err != nil {
 		return err
 	}
 
-	var logger cmtlog.Logger
-	if serverCtx.Viper.GetString(flags.FlagLogFormat) == cmtcfg.LogFormatJSON {
-		logger = cmtlog.NewTMJSONLogger(cmtlog.NewSyncWriter(os.Stdout))
+	var logWriter io.Writer
+	if strings.ToLower(serverCtx.Viper.GetString(flags.FlagLogFormat)) == tmcfg.LogFormatPlain {
+		logWriter = zerolog.ConsoleWriter{Out: os.Stderr}
 	} else {
-		logger = cmtlog.NewTMLogger(cmtlog.NewSyncWriter(os.Stdout))
+		logWriter = os.Stderr
 	}
-	logger, err = cmtflags.ParseLogLevel(config.LogLevel, logger, cmtcfg.DefaultLogLevel)
+
+	logLvlStr := serverCtx.Viper.GetString(flags.FlagLogLevel)
+	logLvl, err := zerolog.ParseLevel(logLvlStr)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse log level (%s): %w", logLvlStr, err)
 	}
 
-	// Check if the CometBFT flag for trace logging is set if it is then setup
-	// a tracing logger in this app as well.
-	if serverCtx.Viper.GetBool(cmtcli.TraceFlag) {
-		logger = cmtlog.NewTracingLogger(logger)
-	}
-
-	serverCtx.Logger = logger.With("module", "server")
+	serverCtx.Logger = ZeroLogWrapper{zerolog.New(logWriter).Level(logLvl).With().Timestamp().Logger()}
 
 	return SetCmdServerContext(cmd, serverCtx)
 }
@@ -199,21 +191,21 @@ func SetCmdServerContext(cmd *cobra.Command, serverCtx *Context) error {
 	return nil
 }
 
-// interceptConfigs parses and updates a CometBFT configuration file or
+// interceptConfigs parses and updates a Tendermint configuration file or
 // creates a new one and saves it. It also parses and saves the application
-// configuration file. The CometBFT configuration file is parsed given a root
+// configuration file. The Tendermint configuration file is parsed given a root
 // Viper object, whereas the application is parsed with the private package-aware
 // viperCfg object.
-func interceptConfigs(rootViper *viper.Viper, customAppTemplate string, customConfig interface{}, cmtConfig *cmtcfg.Config) (*cmtcfg.Config, error) {
+func interceptConfigs(rootViper *viper.Viper, customAppTemplate string, customConfig interface{}, tmConfig *tmcfg.Config) (*tmcfg.Config, error) {
 	rootDir := rootViper.GetString(flags.FlagHome)
 	configPath := filepath.Join(rootDir, "config")
-	cmtCfgFile := filepath.Join(configPath, "config.toml")
+	tmCfgFile := filepath.Join(configPath, "config.toml")
 
-	conf := cmtConfig
+	conf := tmConfig
 
-	switch _, err := os.Stat(cmtCfgFile); {
+	switch _, err := os.Stat(tmCfgFile); {
 	case os.IsNotExist(err):
-		cmtcfg.EnsureRoot(rootDir)
+		tmcfg.EnsureRoot(rootDir)
 
 		if err = conf.ValidateBasic(); err != nil {
 			return nil, fmt.Errorf("error in config file: %w", err)
@@ -223,7 +215,7 @@ func interceptConfigs(rootViper *viper.Viper, customAppTemplate string, customCo
 		conf.P2P.RecvRate = 5120000
 		conf.P2P.SendRate = 5120000
 		conf.Consensus.TimeoutCommit = 5 * time.Second
-		cmtcfg.WriteConfigFile(cmtCfgFile, conf)
+		tmcfg.WriteConfigFile(tmCfgFile, conf)
 
 	case err != nil:
 		return nil, err
@@ -234,7 +226,7 @@ func interceptConfigs(rootViper *viper.Viper, customAppTemplate string, customCo
 		rootViper.AddConfigPath(configPath)
 
 		if err := rootViper.ReadInConfig(); err != nil {
-			return nil, fmt.Errorf("failed to read in %s: %w", cmtCfgFile, err)
+			return nil, fmt.Errorf("failed to read in %s: %w", tmCfgFile, err)
 		}
 	}
 
@@ -280,19 +272,18 @@ func interceptConfigs(rootViper *viper.Viper, customAppTemplate string, customCo
 
 // add server commands
 func AddCommands(rootCmd *cobra.Command, defaultNodeHome string, appCreator types.AppCreator, appExport types.AppExporter, addStartFlags types.ModuleInitFlags) {
-	cometCmd := &cobra.Command{
-		Use:     "comet",
-		Aliases: []string{"cmt", "cometbft", "tendermint"},
-		Short:   "CometBFT subcommands",
+	tendermintCmd := &cobra.Command{
+		Use:   "tendermint",
+		Short: "Tendermint subcommands",
 	}
 
-	cometCmd.AddCommand(
+	tendermintCmd.AddCommand(
 		ShowNodeIDCmd(),
 		ShowValidatorCmd(),
 		ShowAddressCmd(),
 		VersionCmd(),
-		cmtcmd.ResetAllCmd,
-		cmtcmd.ResetStateCmd,
+		tmcmd.ResetAllCmd,
+		tmcmd.ResetStateCmd,
 	)
 
 	startCmd := StartCmd(appCreator, defaultNodeHome)
@@ -300,7 +291,7 @@ func AddCommands(rootCmd *cobra.Command, defaultNodeHome string, appCreator type
 
 	rootCmd.AddCommand(
 		startCmd,
-		cometCmd,
+		tendermintCmd,
 		ExportCmd(appExport, defaultNodeHome),
 		version.NewVersionCommand(),
 		NewRollbackCmd(appCreator, defaultNodeHome),
@@ -375,18 +366,14 @@ func WaitForQuitSignals() ErrorCode {
 func GetAppDBBackend(opts types.AppOptions) dbm.BackendType {
 	rv := cast.ToString(opts.Get("app-db-backend"))
 	if len(rv) == 0 {
+		rv = sdk.DBBackend
+	}
+	if len(rv) == 0 {
 		rv = cast.ToString(opts.Get("db-backend"))
 	}
-
-	// Cosmos SDK has migrated to cosmos-db which does not support all the backends which tm-db supported
-	if rv == "cleveldb" || rv == "badgerdb" || rv == "boltdb" {
-		panic(fmt.Sprintf("invalid app-db-backend %q, use %q, %q, %q instead", rv, dbm.GoLevelDBBackend, dbm.PebbleDBBackend, dbm.RocksDBBackend))
-	}
-
 	if len(rv) != 0 {
 		return dbm.BackendType(rv)
 	}
-
 	return dbm.GoLevelDBBackend
 }
 
@@ -419,7 +406,7 @@ func openDB(rootDir string, backendType dbm.BackendType) (dbm.DB, error) {
 	return dbm.NewDB("application", backendType, dataDir)
 }
 
-func openTraceWriter(traceWriterFile string) (w io.WriteCloser, err error) {
+func openTraceWriter(traceWriterFile string) (w io.Writer, err error) {
 	if traceWriterFile == "" {
 		return
 	}
@@ -432,7 +419,7 @@ func openTraceWriter(traceWriterFile string) (w io.WriteCloser, err error) {
 
 // DefaultBaseappOptions returns the default baseapp options provided by the Cosmos SDK
 func DefaultBaseappOptions(appOpts types.AppOptions) []func(*baseapp.BaseApp) {
-	var cache storetypes.MultiStorePersistentCache
+	var cache sdk.MultiStorePersistentCache
 
 	if cast.ToBool(appOpts.Get(FlagInterBlockCache)) {
 		cache = store.NewCommitKVStoreCacheManager()
@@ -470,11 +457,6 @@ func DefaultBaseappOptions(appOpts types.AppOptions) []func(*baseapp.BaseApp) {
 		baseapp.SetSnapshot(snapshotStore, snapshotOptions),
 		baseapp.SetIAVLCacheSize(cast.ToInt(appOpts.Get(FlagIAVLCacheSize))),
 		baseapp.SetIAVLDisableFastNode(cast.ToBool(appOpts.Get(FlagDisableIAVLFastNode))),
-		baseapp.SetMempool(
-			mempool.NewSenderNonceMempool(
-				mempool.SenderNonceMaxTxOpt(cast.ToInt(appOpts.Get(FlagMempoolMaxTxs))),
-			),
-		),
 		baseapp.SetIAVLLazyLoading(cast.ToBool(appOpts.Get(FlagIAVLLazyLoading))),
 	}
 }

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	gogogrpc "github.com/cosmos/gogoproto/grpc"
+	gogogrpc "github.com/gogo/protobuf/grpc"
 	"github.com/spf13/pflag"
 
 	"github.com/cosmos/cosmos-sdk/client"
@@ -94,23 +94,19 @@ func BroadcastTx(clientCtx client.Context, txf Factory, msgs ...sdk.Msg) error {
 		}
 
 		if err := clientCtx.PrintRaw(json.RawMessage(txBytes)); err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "error: %v\n%s\n", err, txBytes)
+			_, _ = fmt.Fprintf(os.Stderr, "%s\n", txBytes)
 		}
 
 		buf := bufio.NewReader(os.Stdin)
 		ok, err := input.GetConfirmation("confirm transaction before signing and broadcasting", buf, os.Stderr)
-		if err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "error: %v\ncancelled transaction\n", err)
+
+		if err != nil || !ok {
+			_, _ = fmt.Fprintf(os.Stderr, "%s\n", "cancelled transaction")
 			return err
-		}
-		if !ok {
-			_, _ = fmt.Fprintln(os.Stderr, "cancelled transaction")
-			return nil
 		}
 	}
 
-	// When Textual is wired up, the context argument should be retrieved from the client context.
-	err = Sign(context.TODO(), txf, clientCtx.GetFromName(), tx, true)
+	err = Sign(txf, clientCtx.GetFromName(), tx, true)
 	if err != nil {
 		return err
 	}
@@ -153,7 +149,6 @@ func CalculateGas(
 // SignWithPrivKey signs a given tx with the given private key, and returns the
 // corresponding SignatureV2 if the signing is successful.
 func SignWithPrivKey(
-	ctx context.Context,
 	signMode signing.SignMode, signerData authsigning.SignerData,
 	txBuilder client.TxBuilder, priv cryptotypes.PrivKey, txConfig client.TxConfig,
 	accSeq uint64,
@@ -161,7 +156,7 @@ func SignWithPrivKey(
 	var sigV2 signing.SignatureV2
 
 	// Generate the bytes to be signed.
-	signBytes, err := authsigning.GetSignBytesWithContext(txConfig.SignModeHandler(), ctx, signMode, signerData, txBuilder.GetTx())
+	signBytes, err := txConfig.SignModeHandler().GetSignBytes(signMode, signerData, txBuilder.GetTx())
 	if err != nil {
 		return sigV2, err
 	}
@@ -232,7 +227,7 @@ func checkMultipleSigners(tx authsigning.Tx) error {
 // Signing a transaction with mutltiple signers in the DIRECT mode is not supprted and will
 // return an error.
 // An error is returned upon failure.
-func Sign(ctx context.Context, txf Factory, name string, txBuilder client.TxBuilder, overwriteSig bool) error {
+func Sign(txf Factory, name string, txBuilder client.TxBuilder, overwriteSig bool) error {
 	if txf.keybase == nil {
 		return errors.New("keybase must be set prior to signing a transaction")
 	}
@@ -291,8 +286,7 @@ func Sign(ctx context.Context, txf Factory, name string, txBuilder client.TxBuil
 	if overwriteSig {
 		sigs = []signing.SignatureV2{sig}
 	} else {
-		sigs = append(sigs, prevSignatures...)
-		sigs = append(sigs, sig)
+		sigs = append(prevSignatures, sig) //nolint:gocritic
 	}
 	if err := txBuilder.SetSignatures(sigs...); err != nil {
 		return err
@@ -303,13 +297,13 @@ func Sign(ctx context.Context, txf Factory, name string, txBuilder client.TxBuil
 	}
 
 	// Generate the bytes to be signed.
-	bytesToSign, err := authsigning.GetSignBytesWithContext(txf.txConfig.SignModeHandler(), ctx, signMode, signerData, txBuilder.GetTx())
+	bytesToSign, err := txf.txConfig.SignModeHandler().GetSignBytes(signMode, signerData, txBuilder.GetTx())
 	if err != nil {
 		return err
 	}
 
 	// Sign those bytes
-	sigBytes, _, err := txf.keybase.Sign(name, bytesToSign, signMode)
+	sigBytes, _, err := txf.keybase.Sign(name, bytesToSign)
 	if err != nil {
 		return err
 	}
@@ -326,19 +320,10 @@ func Sign(ctx context.Context, txf Factory, name string, txBuilder client.TxBuil
 	}
 
 	if overwriteSig {
-		err = txBuilder.SetSignatures(sig)
-	} else {
-		prevSignatures = append(prevSignatures, sig)
-		err = txBuilder.SetSignatures(prevSignatures...)
+		return txBuilder.SetSignatures(sig)
 	}
-
-	if err != nil {
-		return fmt.Errorf("unable to set signatures on payload: %w", err)
-	}
-
-	// Run optional preprocessing if specified. By default, this is unset
-	// and will return nil.
-	return txf.PreprocessTx(name, txBuilder)
+	prevSignatures = append(prevSignatures, sig)
+	return txBuilder.SetSignatures(prevSignatures...)
 }
 
 // GasEstimateResponse defines a response definition for tx gas estimation.
@@ -409,7 +394,7 @@ func makeAuxSignerData(clientCtx client.Context, f Factory, msgs ...sdk.Msg) (tx
 		return tx.AuxSignerData{}, err
 	}
 
-	sig, _, err := clientCtx.Keyring.Sign(name, signBz, f.signMode)
+	sig, _, err := clientCtx.Keyring.Sign(name, signBz)
 	if err != nil {
 		return tx.AuxSignerData{}, err
 	}

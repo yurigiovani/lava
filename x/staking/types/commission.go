@@ -3,7 +3,7 @@ package types
 import (
 	"time"
 
-	"cosmossdk.io/math"
+	"sigs.k8s.io/yaml"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -34,6 +34,18 @@ func NewCommissionWithTime(rate, maxRate, maxChangeRate sdk.Dec, updatedAt time.
 	}
 }
 
+// String implements the Stringer interface for a Commission object.
+func (c Commission) String() string {
+	out, _ := yaml.Marshal(c)
+	return string(out)
+}
+
+// String implements the Stringer interface for a CommissionRates object.
+func (cr CommissionRates) String() string {
+	out, _ := yaml.Marshal(cr)
+	return string(out)
+}
+
 // Validate performs basic sanity validation checks of initial commission
 // parameters. If validation fails, an SDK error is returned.
 func (cr CommissionRates) Validate() error {
@@ -42,7 +54,7 @@ func (cr CommissionRates) Validate() error {
 		// max rate cannot be negative
 		return ErrCommissionNegative
 
-	case cr.MaxRate.GT(math.LegacyOneDec()):
+	case cr.MaxRate.GT(sdk.OneDec()):
 		// max rate cannot be greater than 1
 		return ErrCommissionHuge
 

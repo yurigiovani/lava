@@ -1,13 +1,11 @@
 package keeper_test
 
 import (
-	"cosmossdk.io/x/upgrade/types"
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/types/address"
+	"github.com/cosmos/cosmos-sdk/x/upgrade/types"
 )
 
 func (s *KeeperTestSuite) TestSoftwareUpgrade() {
-	govAccAddr := sdk.AccAddress(address.Module("gov")).String()
+	govAccAddr := s.app.GovKeeper.GetGovernanceAccount(s.ctx).GetAddress().String()
 
 	testCases := []struct {
 		name      string
@@ -61,7 +59,7 @@ func (s *KeeperTestSuite) TestSoftwareUpgrade() {
 				s.Require().Contains(err.Error(), tc.errMsg)
 			} else {
 				s.Require().NoError(err)
-				plan, found := s.upgradeKeeper.GetUpgradePlan(s.ctx)
+				plan, found := s.app.UpgradeKeeper.GetUpgradePlan(s.ctx)
 				s.Require().Equal(true, found)
 				s.Require().Equal(tc.req.Plan, plan)
 			}
@@ -70,9 +68,8 @@ func (s *KeeperTestSuite) TestSoftwareUpgrade() {
 }
 
 func (s *KeeperTestSuite) TestCancelUpgrade() {
-	govAccAddr := "cosmos10d07y265gmmuvt4z0w9aw880jnsr700j6zn9kn" // TODO
-	// govAccAddr := s.govKeeper.GetGovernanceAccount(s.ctx).GetAddress().String()
-	err := s.upgradeKeeper.ScheduleUpgrade(s.ctx, types.Plan{
+	govAccAddr := s.app.GovKeeper.GetGovernanceAccount(s.ctx).GetAddress().String()
+	err := s.app.UpgradeKeeper.ScheduleUpgrade(s.ctx, types.Plan{
 		Name:   "some name",
 		Info:   "some info",
 		Height: 123450000,
@@ -110,7 +107,7 @@ func (s *KeeperTestSuite) TestCancelUpgrade() {
 				s.Require().Contains(err.Error(), tc.errMsg)
 			} else {
 				s.Require().NoError(err)
-				_, found := s.upgradeKeeper.GetUpgradePlan(s.ctx)
+				_, found := s.app.UpgradeKeeper.GetUpgradePlan(s.ctx)
 				s.Require().Equal(false, found)
 			}
 		})

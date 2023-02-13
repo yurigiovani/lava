@@ -3,27 +3,26 @@ package orm
 import (
 	"testing"
 
-	"github.com/cosmos/gogoproto/proto"
-	"github.com/stretchr/testify/require"
-	"pgregory.net/rapid"
-
+	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/cosmos/cosmos-sdk/x/group/errors"
+	"github.com/stretchr/testify/require"
+	"pgregory.net/rapid"
 )
 
 func TestPaginationProperty(t *testing.T) {
 	t.Run("TestPagination", rapid.MakeCheck(func(t *rapid.T) {
 		// Create a slice of group members
-		tableModels := rapid.SliceOf(genTableModel).Draw(t, "tableModels")
+		tableModels := rapid.SliceOf(genTableModel).Draw(t, "tableModels").([]*testdata.TableModel)
 
 		// Choose a random limit for paging
 		upperLimit := uint64(len(tableModels))
 		if upperLimit == 0 {
 			upperLimit = 1
 		}
-		limit := rapid.Uint64Range(1, upperLimit).Draw(t, "limit")
+		limit := rapid.Uint64Range(1, upperLimit).Draw(t, "limit").(uint64)
 
 		// Reconstruct the slice from offset pages
 		reconstructedTableModels := make([]*testdata.TableModel, 0, len(tableModels))
@@ -53,7 +52,7 @@ func TestPaginationProperty(t *testing.T) {
 
 		// Reconstruct the slice from keyed pages
 		reconstructedTableModels = make([]*testdata.TableModel, 0, len(tableModels))
-		var start uint64
+		var start uint64 = 0
 		key := EncodeSequence(0)
 		for key != nil {
 			pageRequest := &query.PageRequest{
@@ -95,7 +94,7 @@ func testTableModelIterator(tms []*testdata.TableModel, key RowID) Iterator {
 	if key != nil {
 		index = int(DecodeSequence(key))
 	}
-	return IteratorFunc(func(dest proto.Message) (RowID, error) {
+	return IteratorFunc(func(dest codec.ProtoMarshaler) (RowID, error) {
 		if dest == nil {
 			return nil, sdkerrors.Wrap(errors.ErrORMInvalidArgument, "destination object must not be nil")
 		}
@@ -117,6 +116,6 @@ func testTableModelIterator(tms []*testdata.TableModel, key RowID) Iterator {
 
 		index++
 
-		return rowID, proto.Unmarshal(bytes, dest)
+		return rowID, dest.Unmarshal(bytes)
 	})
 }

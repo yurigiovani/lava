@@ -3,11 +3,12 @@ package tx
 import (
 	"fmt"
 
-	"cosmossdk.io/x/tx/textual"
-	"github.com/cosmos/cosmos-sdk/client"
-	"github.com/cosmos/cosmos-sdk/codec"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
+
+	"github.com/cosmos/cosmos-sdk/codec"
+
+	"github.com/cosmos/cosmos-sdk/client"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/signing"
 )
 
@@ -22,25 +23,10 @@ type config struct {
 
 // NewTxConfig returns a new protobuf TxConfig using the provided ProtoCodec and sign modes. The
 // first enabled sign mode will become the default sign mode.
-//
 // NOTE: Use NewTxConfigWithHandler to provide a custom signing handler in case the sign mode
-// is not supported by default (eg: SignMode_SIGN_MODE_EIP_191). Use NewTxConfigWithTextual
-// to enable SIGN_MODE_TEXTUAL (for testing purposes for now).
+// is not supported by default (eg: SignMode_SIGN_MODE_EIP_191).
 func NewTxConfig(protoCodec codec.ProtoCodecMarshaler, enabledSignModes []signingtypes.SignMode) client.TxConfig {
-	for _, m := range enabledSignModes {
-		if m == signingtypes.SignMode_SIGN_MODE_TEXTUAL {
-			panic("cannot use NewTxConfig with SIGN_MODE_TEXTUAL enabled; please use NewTxConfigWithTextual")
-		}
-	}
-
-	return NewTxConfigWithHandler(protoCodec, makeSignModeHandler(enabledSignModes, textual.NewTextual(nil)))
-}
-
-// NewTxConfigWithTextual is like NewTxConfig with the ability to add
-// a SIGN_MODE_TEXTUAL renderer. It is currently still EXPERIMENTAL, for should
-// be used for TESTING purposes only, until Textual is fully released.
-func NewTxConfigWithTextual(protoCodec codec.ProtoCodecMarshaler, enabledSignModes []signingtypes.SignMode, textual textual.Textual) client.TxConfig {
-	return NewTxConfigWithHandler(protoCodec, makeSignModeHandler(enabledSignModes, textual))
+	return NewTxConfigWithHandler(protoCodec, makeSignModeHandler(enabledSignModes))
 }
 
 // NewTxConfig returns a new protobuf TxConfig using the provided ProtoCodec and signing handler.

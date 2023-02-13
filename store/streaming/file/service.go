@@ -10,14 +10,16 @@ import (
 	"sort"
 	"sync"
 
-	"cosmossdk.io/errors"
-	abci "github.com/cometbft/cometbft/abci/types"
-	"github.com/cosmos/cosmos-sdk/log"
+	abci "github.com/tendermint/tendermint/abci/types"
 
-	"cosmossdk.io/store/types"
+	"github.com/cosmos/cosmos-sdk/baseapp"
+	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/store/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 )
 
-var _ types.StreamingService = &StreamingService{}
+var _ baseapp.StreamingService = &StreamingService{}
 
 // StreamingService is a concrete implementation of StreamingService that writes
 // state changes out to files.
@@ -25,8 +27,7 @@ type StreamingService struct {
 	storeListeners []*types.MemoryListener // a series of KVStore listeners for each KVStore
 	filePrefix     string                  // optional prefix for each of the generated files
 	writeDir       string                  // directory to write files into
-	codec          types.Codec             // marshaller used for re-marshalling the ABCI messages to write them out to the destination files
-	logger         log.Logger
+	codec          codec.BinaryCodec       // marshaller used for re-marshalling the ABCI messages to write them out to the destination files
 
 	currentBlockNumber int64
 	blockMetadata      types.BlockMetadata
@@ -47,17 +48,9 @@ type StreamingService struct {
 func NewStreamingService(
 	writeDir, filePrefix string,
 	storeKeys []types.StoreKey,
-	cdc types.Codec,
-	logger log.Logger,
+	cdc codec.BinaryCodec,
 	outputMetadata, stopNodeOnErr, fsync bool,
 ) (*StreamingService, error) {
-	// Check that the writeDir exists and is writable so that we can catch the
-	// error here at initialization. If it is not we don't open a dstFile until we
-	// receive our first ABCI message.
-	if err := isDirWriteable(writeDir); err != nil {
-		return nil, err
-	}
-
 	// sort storeKeys for deterministic output
 	sort.SliceStable(storeKeys, func(i, j int) bool {
 		return storeKeys[i].Name() < storeKeys[j].Name()
@@ -69,12 +62,18 @@ func NewStreamingService(
 		listeners[i] = types.NewMemoryListener(key)
 	}
 
+	// Check that the writeDir exists and is writable so that we can catch the
+	// error here at initialization. If it is not we don't open a dstFile until we
+	// receive our first ABCI message.
+	if err := isDirWriteable(writeDir); err != nil {
+		return nil, err
+	}
+
 	return &StreamingService{
 		storeListeners: listeners,
 		filePrefix:     filePrefix,
 		writeDir:       writeDir,
 		codec:          cdc,
-		logger:         logger,
 		outputMetadata: outputMetadata,
 		stopNodeOnErr:  stopNodeOnErr,
 		fsync:          fsync,
@@ -132,7 +131,6 @@ func (fss *StreamingService) ListenEndBlock(ctx context.Context, req abci.Reques
 // It will only return a non-nil error when stopNodeOnErr is set.
 func (fss *StreamingService) ListenCommit(ctx context.Context, res abci.ResponseCommit) error {
 	if err := fss.doListenCommit(ctx, res); err != nil {
-		fss.logger.Error("Listen commit failed", "height", fss.currentBlockNumber, "err", err)
 		if fss.stopNodeOnErr {
 			return err
 		}
@@ -214,29 +212,30 @@ func writeLengthPrefixedFile(path string, data []byte, fsync bool) (err error) {
 	var f *os.File
 	f, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
-		return errors.Wrapf(err, "open file failed: %s", path)
+		return sdkerrors.Wrapf(err, "open file failed: %s", path)
 	}
 
 	defer func() {
 		// avoid overriding the real error with file close error
 		if err1 := f.Close(); err1 != nil && err == nil {
-			err = errors.Wrapf(err, "close file failed: %s", path)
+			err = sdkerrors.Wrapf(err, "close file failed: %s", path)
 		}
 	}()
-	_, err = f.Write(types.Uint64ToBigEndian(uint64(len(data))))
+
+	_, err = f.Write(sdk.Uint64ToBigEndian(uint64(len(data))))
 	if err != nil {
-		return errors.Wrapf(err, "write length prefix failed: %s", path)
+		return sdkerrors.Wrapf(err, "write length prefix failed: %s", path)
 	}
 
 	_, err = f.Write(data)
 	if err != nil {
-		return errors.Wrapf(err, "write block data failed: %s", path)
+		return sdkerrors.Wrapf(err, "write block data failed: %s", path)
 	}
 
 	if fsync {
 		err = f.Sync()
 		if err != nil {
-			return errors.Wrapf(err, "fsync failed: %s", path)
+			return sdkerrors.Wrapf(err, "fsync failed: %s", path)
 		}
 	}
 

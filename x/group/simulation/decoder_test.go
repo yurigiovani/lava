@@ -6,21 +6,17 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"cosmossdk.io/depinject"
-	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
 	"github.com/cosmos/cosmos-sdk/types/kv"
 	"github.com/cosmos/cosmos-sdk/x/group"
 	"github.com/cosmos/cosmos-sdk/x/group/internal/orm"
 	"github.com/cosmos/cosmos-sdk/x/group/keeper"
 	"github.com/cosmos/cosmos-sdk/x/group/simulation"
-	grouptestutil "github.com/cosmos/cosmos-sdk/x/group/testutil"
 )
 
 func TestDecodeStore(t *testing.T) {
-	var cdc codec.Codec
-	err := depinject.Inject(grouptestutil.AppConfig, &cdc)
-	require.NoError(t, err)
+	cdc := simapp.MakeTestEncodingConfig().Codec
 	dec := simulation.NewDecodeStore(cdc)
 
 	g := group.GroupInfo{Id: 1}

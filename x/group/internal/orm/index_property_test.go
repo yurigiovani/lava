@@ -10,7 +10,7 @@ import (
 
 func TestPrefixRangeProperty(t *testing.T) {
 	t.Run("TestPrefixRange", rapid.MakeCheck(func(t *rapid.T) {
-		prefix := rapid.SliceOf(rapid.Byte()).Draw(t, "prefix")
+		prefix := rapid.SliceOf(rapid.Byte()).Draw(t, "prefix").([]byte)
 
 		start, end := PrefixRange(prefix)
 
@@ -46,7 +46,7 @@ func TestPrefixRangeProperty(t *testing.T) {
 				// index, one greater at overflow and 0 from
 				// then on
 				for i, b := range start {
-					if i < overflowIndex { //nolint:gocritic // ifElseChain: rewrite if-else to switch statement
+					if i < overflowIndex {
 						require.Equal(t, b, end[i])
 					} else if i == overflowIndex {
 						require.Equal(t, b+1, end[i])

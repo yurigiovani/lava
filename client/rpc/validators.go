@@ -6,8 +6,9 @@ import (
 	"strconv"
 	"strings"
 
-	cmttypes "github.com/cometbft/cometbft/types"
 	"github.com/spf13/cobra"
+	tmcli "github.com/tendermint/tendermint/libs/cli"
+	tmtypes "github.com/tendermint/tendermint/types"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
@@ -57,8 +58,8 @@ func ValidatorCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().String(flags.FlagNode, "tcp://localhost:26657", "<host>:<port> to CometBFT RPC interface for this chain")
-	cmd.Flags().StringP(flags.FlagOutput, "o", "text", "Output format (text|json)")
+	cmd.Flags().String(flags.FlagNode, "tcp://localhost:26657", "<host>:<port> to Tendermint RPC interface for this chain")
+	cmd.Flags().StringP(tmcli.OutputFlag, "o", "text", "Output format (text|json)")
 	cmd.Flags().Int(flags.FlagPage, query.DefaultPage, "Query a specific page of paginated results")
 	cmd.Flags().Int(flags.FlagLimit, 100, "Query number of results returned per page")
 
@@ -83,24 +84,26 @@ type ResultValidatorsOutput struct {
 func (rvo ResultValidatorsOutput) String() string {
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "block height: %d\n", rvo.BlockHeight)
-	fmt.Fprintf(&b, "total count: %d\n", rvo.Total)
+	b.WriteString(fmt.Sprintf("block height: %d\n", rvo.BlockHeight))
+	b.WriteString(fmt.Sprintf("total count: %d\n", rvo.Total))
 
 	for _, val := range rvo.Validators {
-		fmt.Fprintf(&b, `
+		b.WriteString(
+			fmt.Sprintf(`
   Address:          %s
   Pubkey:           %s
   ProposerPriority: %d
   VotingPower:      %d
 		`,
-			val.Address, val.PubKey, val.ProposerPriority, val.VotingPower,
+				val.Address, val.PubKey, val.ProposerPriority, val.VotingPower,
+			),
 		)
 	}
 
 	return b.String()
 }
 
-func validatorOutput(validator *cmttypes.Validator) (ValidatorOutput, error) {
+func validatorOutput(validator *tmtypes.Validator) (ValidatorOutput, error) {
 	pk, err := cryptocodec.FromTmPubKeyInterface(validator.PubKey)
 	if err != nil {
 		return ValidatorOutput{}, err

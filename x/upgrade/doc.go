@@ -45,9 +45,9 @@ be a matter of minutes and not even require them to be awake at that time.
 Setup an upgrade Keeper for the app and then define a BeginBlocker that calls the upgrade
 keeper's BeginBlocker method:
 
-	func (app *myApp) BeginBlocker(ctx sdk.Context, req abci.RequestBeginBlock) (abci.ResponseBeginBlock, error) {
+	func (app *myApp) BeginBlocker(ctx sdk.Context, req abci.RequestBeginBlock) abci.ResponseBeginBlock {
 		app.upgradeKeeper.BeginBlocker(ctx, req)
-		return abci.ResponseBeginBlock{}, nil
+		return abci.ResponseBeginBlock{}
 	}
 
 The app must then integrate the upgrade keeper with its governance module as appropriate. The governance module

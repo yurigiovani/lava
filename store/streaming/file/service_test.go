@@ -1,7 +1,6 @@
 package file
 
 import (
-	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -10,29 +9,32 @@ import (
 	"sync"
 	"testing"
 
-	abci "github.com/cometbft/cometbft/abci/types"
-	"github.com/cometbft/cometbft/libs/log"
-	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/stretchr/testify/require"
+	abci "github.com/tendermint/tendermint/abci/types"
+	types1 "github.com/tendermint/tendermint/proto/tendermint/types"
 
-	"cosmossdk.io/store/types"
+	"github.com/cosmos/cosmos-sdk/codec"
+	codecTypes "github.com/cosmos/cosmos-sdk/codec/types"
+	"github.com/cosmos/cosmos-sdk/store/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 var (
-	testMarshaller               = types.NewTestCodec()
+	interfaceRegistry            = codecTypes.NewInterfaceRegistry()
+	testMarshaller               = codec.NewProtoCodec(interfaceRegistry)
 	testStreamingService         *StreamingService
 	testListener1, testListener2 types.WriteListener
-	emptyContext                 = context.TODO()
+	emptyContext                 = sdk.Context{}
 
 	// test abci message types
 	mockHash          = []byte{1, 2, 3, 4, 5, 6, 7, 8, 9}
 	testBeginBlockReq = abci.RequestBeginBlock{
-		Header: cmtproto.Header{
+		Header: types1.Header{
 			Height: 1,
 		},
-		ByzantineValidators: []abci.Misbehavior{},
+		ByzantineValidators: []abci.Evidence{},
 		Hash:                mockHash,
-		LastCommitInfo: abci.CommitInfo{
+		LastCommitInfo: abci.LastCommitInfo{
 			Round: 1,
 			Votes: []abci.VoteInfo{},
 		},
@@ -52,7 +54,7 @@ var (
 	}
 	testEndBlockRes = abci.ResponseEndBlock{
 		Events:                []abci.Event{},
-		ConsensusParamUpdates: &cmtproto.ConsensusParams{},
+		ConsensusParamUpdates: &abci.ConsensusParams{},
 		ValidatorUpdates:      []abci.ValidatorUpdate{},
 	}
 	testCommitRes = abci.ResponseCommit{
@@ -91,8 +93,8 @@ var (
 	}
 
 	// mock store keys
-	mockStoreKey1 = types.NewKVStoreKey("mockStore1")
-	mockStoreKey2 = types.NewKVStoreKey("mockStore2")
+	mockStoreKey1 = sdk.NewKVStoreKey("mockStore1")
+	mockStoreKey2 = sdk.NewKVStoreKey("mockStore2")
 
 	// file stuff
 	testPrefix = "testPrefix"
@@ -117,7 +119,7 @@ func TestFileStreamingService(t *testing.T) {
 
 	testKeys := []types.StoreKey{mockStoreKey1, mockStoreKey2}
 	var err error
-	testStreamingService, err = NewStreamingService(testDir, testPrefix, testKeys, testMarshaller, log.NewNopLogger(), true, false, false)
+	testStreamingService, err = NewStreamingService(testDir, testPrefix, testKeys, testMarshaller, true, false, false)
 	require.Nil(t, err)
 	require.IsType(t, &StreamingService{}, testStreamingService)
 	require.Equal(t, testPrefix, testStreamingService.filePrefix)
@@ -296,7 +298,6 @@ func testListenBlock(t *testing.T) {
 	metaFileName := fmt.Sprintf("%s-block-%d-meta", testPrefix, testBeginBlockReq.GetHeader().Height)
 	dataFileName := fmt.Sprintf("%s-block-%d-data", testPrefix, testBeginBlockReq.GetHeader().Height)
 	metaFileBytes, err := readInFile(metaFileName)
-	require.Nil(t, err)
 	dataFileBytes, err := readInFile(dataFileName)
 	require.Nil(t, err)
 
@@ -329,7 +330,8 @@ func readInFile(name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	size := types.BigEndianToUint64(bz[:8])
+
+	size := sdk.BigEndianToUint64(bz[:8])
 	if len(bz) != int(size)+8 {
 		return nil, errors.New("incomplete file ")
 	}

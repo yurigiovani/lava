@@ -3,7 +3,9 @@ package cli
 import (
 	"fmt"
 	"github.com/cosmos/cosmos-sdk/client"
+	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/client/tx"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authclient "github.com/cosmos/cosmos-sdk/x/auth/client"
 	"github.com/cosmos/cosmos-sdk/x/lottery/types"
@@ -15,7 +17,7 @@ import (
 func NewLotteryCmd() *cobra.Command {
 	lotteryTxCmd := &cobra.Command{
 		Use:                        types.ModuleName,
-		Short:                      "Staking transaction subcommands",
+		Short:                      "Lottery subcommands",
 		DisableFlagParsing:         true,
 		SuggestionsMinimumDistance: 2,
 		RunE:                       client.ValidateCmd,
@@ -25,14 +27,15 @@ func NewLotteryCmd() *cobra.Command {
 		NewEnterLotteryCmd(),
 	)
 
+	flags.AddTxFlagsToCmd(lotteryTxCmd)
+
 	return lotteryTxCmd
 }
 
 func NewEnterLotteryCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "enter [address] [amount] [tokenDenom]",
+		Use:   "enter",
 		Short: "Enter the lottery",
-		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientCtx, err := client.GetClientTxContext(cmd)
 
@@ -40,58 +43,39 @@ func NewEnterLotteryCmd() *cobra.Command {
 				return err
 			}
 
-			address, err := sdk.AccAddressFromBech32(args[0])
-			if err != nil {
-				return err
-			}
-
-			amount, err := sdk.ParseCoinNormalized(args[1] + " " + args[2])
+			txf := tx.NewFactoryCLI(clientCtx, cmd.Flags()).
+				WithTxConfig(clientCtx.TxConfig).WithAccountRetriever(clientCtx.AccountRetriever)
+			txf, msg, err := newBuildCreateValidatorMsg(clientCtx, txf, cmd.Flags())
 
 			if err != nil {
 				return err
 			}
 
-			txResponse, err := sendEnterLottery(clientCtx, cmd.Flags(), address, amount, args[2])
+			err = sendEnterLottery(clientCtx, txf, msg)
 
 			if err != nil {
 				return err
 			}
 
-			txRaw := []byte(txResponse.RawLog)
+			//txRaw := []byte(txResponse.RawLog)
+			//
+			//return clientCtx.PrintRaw(txRaw)
 
-			return clientCtx.PrintRaw(txRaw)
+			return nil
 		},
 	}
+
+	cmd.Flags().String(FlagAmount, "", "The amount that will send to lottery")
+	cmd.Flags().String(FlagFrom, "", "The address that will enter on lottery")
+
+	_ = cmd.MarkFlagRequired(FlagAmount)
+	_ = cmd.MarkFlagRequired(FlagFrom)
+
 	return cmd
 }
 
-func sendEnterLottery(clientCtx client.Context, flags *flag.FlagSet, address sdk.AccAddress, amount sdk.Coin, tokenDenom string) (sdk.TxResponse, error) {
-	msg := types.NewMsgEnterLottery(address, amount, tokenDenom)
-
-	txFactory := tx.NewFactoryCLI(clientCtx, flags)
-	txFactory = txFactory.WithAccountNumber(0).WithSequence(0)
-
-	txBuilder := clientCtx.TxConfig.NewTxBuilder()
-
-	// set the new appened msgs into builder
-	txBuilder.SetMsgs(msg)
-
-	// set the memo,fees,feeGranter,feePayer from cmd flags
-	txBuilder.SetMemo(txFactory.Memo())
-	txBuilder.SetFeeAmount(txFactory.Fees())
-	txBuilder.SetFeeGranter(clientCtx.FeeGranter)
-	txBuilder.SetFeePayer(clientCtx.FeePayer)
-
-	// set the gasLimit
-	txBuilder.SetGasLimit(txFactory.Gas())
-
-	sign(clientCtx, txBuilder, txFactory, "from")
-
-	txBytes, err := clientCtx.TxConfig.TxEncoder()(txBuilder.GetTx())
-
-	res, err := clientCtx.BroadcastTx(txBytes)
-
-	return *res, err
+func sendEnterLottery(clientCtx client.Context, txFactory tx.Factory, msg *types.MsgEnterLottery) error {
+	return tx.GenerateOrBroadcastTxWithFactory(clientCtx, txFactory, msg)
 }
 
 func sign(clientCtx client.Context, txBuilder client.TxBuilder, txFactory tx.Factory, from string) error {
@@ -100,9 +84,56 @@ func sign(clientCtx client.Context, txBuilder client.TxBuilder, txFactory tx.Fac
 		return fmt.Errorf("error getting account from keybase: %w", err)
 	}
 
-	if err = authclient.SignTx(txFactory, clientCtx, fromName, txBuilder, true, true); err != nil {
+	if err = authclient.SignTx(txFactory, clientCtx, fromName, txBuilder, false, false); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func newBuildCreateValidatorMsg(clientCtx client.Context, txf tx.Factory, fs *flag.FlagSet) (tx.Factory, *types.MsgEnterLottery, error) {
+	fAmount, _ := fs.GetString(FlagAmount)
+	amount, err := sdk.ParseCoinNormalized(fAmount)
+	if err != nil {
+		return txf, nil, err
+	}
+
+	valAddr := clientCtx.GetFromAddress()
+	//pkStr, err := fs.GetString(cli.FlagPubKey)
+	//if err != nil {
+	//	return txf, nil, err
+	//}
+
+	pkStr := "{\"@type\":\"/cosmos.crypto.ed25519.PubKey\",\"key\":\"Ixou4RickafrCPy0xhRzOPyfdZjVQ0VA77bT4MTY+AQ=\"}"
+
+	var pk cryptotypes.PubKey
+	if err := clientCtx.Codec.UnmarshalInterfaceJSON([]byte(pkStr), &pk); err != nil {
+		return txf, nil, err
+	}
+
+	//moniker, _ := fs.GetString(FlagMoniker)
+	//identity, _ := fs.GetString(FlagIdentity)
+	//website, _ := fs.GetString(FlagWebsite)
+	//security, _ := fs.GetString(FlagSecurityContact)
+	//details, _ := fs.GetString(FlagDetails)
+	//description := types.NewDescription(
+	//	moniker,
+	//	identity,
+	//	website,
+	//	security,
+	//	details,
+	//)
+
+	msg := types.NewMsgEnterLottery(
+		valAddr, amount, amount.Denom,
+	)
+
+	if err != nil {
+		return txf, nil, err
+	}
+	if err := msg.ValidateBasic(); err != nil {
+		return txf, nil, err
+	}
+
+	return txf, &msg, nil
 }

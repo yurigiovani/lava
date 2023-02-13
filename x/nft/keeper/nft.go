@@ -1,11 +1,10 @@
 package keeper
 
 import (
-	"cosmossdk.io/store/prefix"
-	"cosmossdk.io/x/nft"
-
+	"github.com/cosmos/cosmos-sdk/store/prefix"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
+	"github.com/cosmos/cosmos-sdk/x/nft"
 )
 
 // Mint defines a method for minting a new nft
@@ -18,14 +17,6 @@ func (k Keeper) Mint(ctx sdk.Context, token nft.NFT, receiver sdk.AccAddress) er
 		return sdkerrors.Wrap(nft.ErrNFTExists, token.Id)
 	}
 
-	k.mintWithNoCheck(ctx, token, receiver)
-	return nil
-}
-
-// mintWithNoCheck defines a method for minting a new nft
-// Note: this method does not check whether the class already exists in nft.
-// The upper-layer application needs to check it when it needs to use it.
-func (k Keeper) mintWithNoCheck(ctx sdk.Context, token nft.NFT, receiver sdk.AccAddress) {
 	k.setNFT(ctx, token)
 	k.setOwner(ctx, token.ClassId, token.Id, receiver)
 	k.incrTotalSupply(ctx, token.ClassId)
@@ -35,6 +26,7 @@ func (k Keeper) mintWithNoCheck(ctx sdk.Context, token nft.NFT, receiver sdk.Acc
 		Id:      token.Id,
 		Owner:   receiver.String(),
 	})
+	return nil
 }
 
 // Burn defines a method for burning a nft from a specific account.
@@ -48,14 +40,6 @@ func (k Keeper) Burn(ctx sdk.Context, classID string, nftID string) error {
 		return sdkerrors.Wrap(nft.ErrNFTNotExists, nftID)
 	}
 
-	k.burnWithNoCheck(ctx, classID, nftID)
-	return nil
-}
-
-// burnWithNoCheck defines a method for burning a nft from a specific account.
-// Note: this method does not check whether the class already exists in nft.
-// The upper-layer application needs to check it when it needs to use it
-func (k Keeper) burnWithNoCheck(ctx sdk.Context, classID string, nftID string) error {
 	owner := k.GetOwner(ctx, classID, nftID)
 	nftStore := k.getNFTStore(ctx, classID)
 	nftStore.Delete([]byte(nftID))
@@ -80,15 +64,8 @@ func (k Keeper) Update(ctx sdk.Context, token nft.NFT) error {
 	if !k.HasNFT(ctx, token.ClassId, token.Id) {
 		return sdkerrors.Wrap(nft.ErrNFTNotExists, token.Id)
 	}
-	k.updateWithNoCheck(ctx, token)
-	return nil
-}
-
-// Update defines a method for updating an exist nft
-// Note: this method does not check whether the class already exists in nft.
-// The upper-layer application needs to check it when it needs to use it
-func (k Keeper) updateWithNoCheck(ctx sdk.Context, token nft.NFT) {
 	k.setNFT(ctx, token)
+	return nil
 }
 
 // Transfer defines a method for sending a nft from one account to another account.
@@ -106,18 +83,6 @@ func (k Keeper) Transfer(ctx sdk.Context,
 		return sdkerrors.Wrap(nft.ErrNFTNotExists, nftID)
 	}
 
-	k.transferWithNoCheck(ctx, classID, nftID, receiver)
-	return nil
-}
-
-// Transfer defines a method for sending a nft from one account to another account.
-// Note: this method does not check whether the class already exists in nft.
-// The upper-layer application needs to check it when it needs to use it
-func (k Keeper) transferWithNoCheck(ctx sdk.Context,
-	classID string,
-	nftID string,
-	receiver sdk.AccAddress,
-) error {
 	owner := k.GetOwner(ctx, classID, nftID)
 	k.deleteOwner(ctx, classID, nftID, owner)
 	k.setOwner(ctx, classID, nftID, receiver)

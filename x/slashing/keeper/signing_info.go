@@ -3,9 +3,7 @@ package keeper
 import (
 	"time"
 
-	gogotypes "github.com/cosmos/gogoproto/types"
-
-	storetypes "cosmossdk.io/store/types"
+	gogotypes "github.com/gogo/protobuf/types"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/slashing/types"
@@ -44,7 +42,7 @@ func (k Keeper) IterateValidatorSigningInfos(ctx sdk.Context,
 	handler func(address sdk.ConsAddress, info types.ValidatorSigningInfo) (stop bool),
 ) {
 	store := ctx.KVStore(k.storeKey)
-	iter := storetypes.KVStorePrefixIterator(store, types.ValidatorSigningInfoKeyPrefix)
+	iter := sdk.KVStorePrefixIterator(store, types.ValidatorSigningInfoKeyPrefix)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		address := types.ValidatorSigningInfoAddress(iter.Key())
@@ -152,7 +150,7 @@ func (k Keeper) SetValidatorMissedBlockBitArray(ctx sdk.Context, address sdk.Con
 // clearValidatorMissedBlockBitArray deletes every instance of ValidatorMissedBlockBitArray in the store
 func (k Keeper) clearValidatorMissedBlockBitArray(ctx sdk.Context, address sdk.ConsAddress) {
 	store := ctx.KVStore(k.storeKey)
-	iter := storetypes.KVStorePrefixIterator(store, types.ValidatorMissedBlockBitArrayPrefixKey(address))
+	iter := sdk.KVStorePrefixIterator(store, types.ValidatorMissedBlockBitArrayPrefixKey(address))
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		store.Delete(iter.Key())

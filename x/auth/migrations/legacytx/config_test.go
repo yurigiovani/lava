@@ -10,7 +10,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/migrations/legacytx"
-	txtestutil "github.com/cosmos/cosmos-sdk/x/auth/tx/testutil"
+	"github.com/cosmos/cosmos-sdk/x/auth/testutil"
 )
 
 func testCodec() *codec.LegacyAmino {
@@ -24,5 +24,5 @@ func testCodec() *codec.LegacyAmino {
 func TestStdTxConfig(t *testing.T) {
 	cdc := testCodec()
 	txGen := legacytx.StdTxConfig{Cdc: cdc}
-	suite.Run(t, txtestutil.NewTxConfigTestSuite(txGen))
+	suite.Run(t, testutil.NewTxConfigTestSuite(txGen))
 }

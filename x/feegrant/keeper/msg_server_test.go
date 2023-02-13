@@ -1,19 +1,12 @@
 package keeper_test
 
 import (
-	"time"
-
-	"cosmossdk.io/x/feegrant"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
-	"github.com/cosmos/cosmos-sdk/types"
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	"github.com/golang/mock/gomock"
+	"github.com/cosmos/cosmos-sdk/x/feegrant"
 )
 
 func (suite *KeeperTestSuite) TestGrantAllowance() {
-	ctx := suite.ctx.WithBlockTime(time.Now())
-	oneYear := ctx.BlockTime().AddDate(1, 0, 0)
-	yesterday := ctx.BlockTime().AddDate(0, 0, -1)
+	oneYear := suite.sdkCtx.BlockTime().AddDate(1, 0, 0)
 
 	testCases := []struct {
 		name      string
@@ -48,49 +41,6 @@ func (suite *KeeperTestSuite) TestGrantAllowance() {
 			},
 			true,
 			"decoding bech32 failed",
-		},
-		{
-			"valid: grantee account doesn't exist",
-			func() *feegrant.MsgGrantAllowance {
-				grantee := "cosmos139f7kncmglres2nf3h4hc4tade85ekfr8sulz5"
-				granteeAccAddr := types.MustAccAddressFromBech32(grantee)
-				any, err := codectypes.NewAnyWithValue(&feegrant.BasicAllowance{
-					SpendLimit: suite.atom,
-					Expiration: &oneYear,
-				})
-
-				suite.accountKeeper.EXPECT().GetAccount(gomock.Any(), granteeAccAddr).Return(nil).AnyTimes()
-
-				acc := authtypes.NewBaseAccountWithAddress(granteeAccAddr)
-				suite.accountKeeper.EXPECT().NewAccountWithAddress(gomock.Any(), types.MustAccAddressFromBech32(grantee)).Return(acc).AnyTimes()
-				suite.accountKeeper.EXPECT().SetAccount(gomock.Any(), acc).Return()
-
-				suite.Require().NoError(err)
-				return &feegrant.MsgGrantAllowance{
-					Granter:   suite.addrs[0].String(),
-					Grantee:   grantee,
-					Allowance: any,
-				}
-			},
-			false,
-			"",
-		},
-		{
-			"invalid: past expiry",
-			func() *feegrant.MsgGrantAllowance {
-				any, err := codectypes.NewAnyWithValue(&feegrant.BasicAllowance{
-					SpendLimit: suite.atom,
-					Expiration: &yesterday,
-				})
-				suite.Require().NoError(err)
-				return &feegrant.MsgGrantAllowance{
-					Granter:   suite.addrs[0].String(),
-					Grantee:   suite.addrs[1].String(),
-					Allowance: any,
-				}
-			},
-			true,
-			"expiration is before current block time",
 		},
 		{
 			"valid: basic fee allowance",
@@ -167,7 +117,7 @@ func (suite *KeeperTestSuite) TestGrantAllowance() {
 	}
 	for _, tc := range testCases {
 		suite.Run(tc.name, func() {
-			_, err := suite.msgSrvr.GrantAllowance(ctx, tc.req())
+			_, err := suite.msgSrvr.GrantAllowance(suite.ctx, tc.req())
 			if tc.expectErr {
 				suite.Require().Error(err)
 				suite.Require().Contains(err.Error(), tc.errMsg)
@@ -177,7 +127,7 @@ func (suite *KeeperTestSuite) TestGrantAllowance() {
 }
 
 func (suite *KeeperTestSuite) TestRevokeAllowance() {
-	oneYear := suite.ctx.BlockTime().AddDate(1, 0, 0)
+	oneYear := suite.sdkCtx.BlockTime().AddDate(1, 0, 0)
 
 	testCases := []struct {
 		name      string

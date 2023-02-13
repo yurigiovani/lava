@@ -167,6 +167,7 @@ var (
 	// supplied.
 	ErrInvalidGasLimit = Register(RootCodespace, 41, "invalid gas limit")
 
-	// ErrPanic should only be set when we recovering from a panic
+	// ErrPanic is only set when we recover from a panic, so we know to
+	// redact potentially sensitive system info
 	ErrPanic = errorsmod.ErrPanic
 )

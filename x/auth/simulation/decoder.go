@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	gogotypes "github.com/cosmos/gogoproto/types"
+	gogotypes "github.com/gogo/protobuf/types"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -13,7 +13,7 @@ import (
 )
 
 type AuthUnmarshaler interface {
-	UnmarshalAccount([]byte) (sdk.AccountI, error)
+	UnmarshalAccount([]byte) (types.AccountI, error)
 	GetCodec() codec.BinaryCodec
 }
 

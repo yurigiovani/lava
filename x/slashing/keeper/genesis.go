@@ -38,9 +38,7 @@ func (keeper Keeper) InitGenesis(ctx sdk.Context, stakingKeeper types.StakingKee
 		}
 	}
 
-	if err := keeper.SetParams(ctx, data.Params); err != nil {
-		panic(err)
-	}
+	keeper.SetParams(ctx, data.Params)
 }
 
 // ExportGenesis writes the current store values

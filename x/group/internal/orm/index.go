@@ -3,11 +3,10 @@ package orm
 import (
 	"bytes"
 
-	"github.com/cosmos/gogoproto/proto"
-
-	"cosmossdk.io/store/prefix"
-	"cosmossdk.io/store/types"
-
+	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/store/prefix"
+	"github.com/cosmos/cosmos-sdk/store/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/cosmos/cosmos-sdk/x/group/errors"
@@ -15,9 +14,9 @@ import (
 
 // indexer creates and modifies the second MultiKeyIndex based on the operations and changes on the primary object.
 type indexer interface {
-	OnCreate(store types.KVStore, rowID RowID, value interface{}) error
-	OnDelete(store types.KVStore, rowID RowID, value interface{}) error
-	OnUpdate(store types.KVStore, rowID RowID, newValue, oldValue interface{}) error
+	OnCreate(store sdk.KVStore, rowID RowID, value interface{}) error
+	OnDelete(store sdk.KVStore, rowID RowID, value interface{}) error
+	OnUpdate(store sdk.KVStore, rowID RowID, newValue, oldValue interface{}) error
 }
 
 var _ Index = &MultiKeyIndex{}
@@ -72,7 +71,7 @@ func newIndex(tb Indexable, prefix byte, indexer *Indexer, indexerF IndexerFunc,
 }
 
 // Has checks if a key exists. Returns an error on nil key.
-func (i MultiKeyIndex) Has(store types.KVStore, key interface{}) (bool, error) {
+func (i MultiKeyIndex) Has(store sdk.KVStore, key interface{}) (bool, error) {
 	pStore := prefix.NewStore(store, []byte{i.prefix})
 	encodedKey, err := keyPartBytes(key, false)
 	if err != nil {
@@ -84,7 +83,7 @@ func (i MultiKeyIndex) Has(store types.KVStore, key interface{}) (bool, error) {
 }
 
 // Get returns a result iterator for the searchKey. Parameters must not be nil.
-func (i MultiKeyIndex) Get(store types.KVStore, searchKey interface{}) (Iterator, error) {
+func (i MultiKeyIndex) Get(store sdk.KVStore, searchKey interface{}) (Iterator, error) {
 	pStore := prefix.NewStore(store, []byte{i.prefix})
 	encodedKey, err := keyPartBytes(searchKey, false)
 	if err != nil {
@@ -97,7 +96,7 @@ func (i MultiKeyIndex) Get(store types.KVStore, searchKey interface{}) (Iterator
 // GetPaginated creates an iterator for the searchKey
 // starting from pageRequest.Key if provided.
 // The pageRequest.Key is the rowID while searchKey is a MultiKeyIndex key.
-func (i MultiKeyIndex) GetPaginated(store types.KVStore, searchKey interface{}, pageRequest *query.PageRequest) (Iterator, error) {
+func (i MultiKeyIndex) GetPaginated(store sdk.KVStore, searchKey interface{}, pageRequest *query.PageRequest) (Iterator, error) {
 	pStore := prefix.NewStore(store, []byte{i.prefix})
 	encodedKey, err := keyPartBytes(searchKey, false)
 	if err != nil {
@@ -133,7 +132,7 @@ func (i MultiKeyIndex) GetPaginated(store types.KVStore, searchKey interface{}, 
 //	it = LimitIterator(it, defaultLimit)
 //
 // CONTRACT: No writes may happen within a domain while an iterator exists over it.
-func (i MultiKeyIndex) PrefixScan(store types.KVStore, startI interface{}, endI interface{}) (Iterator, error) {
+func (i MultiKeyIndex) PrefixScan(store sdk.KVStore, startI interface{}, endI interface{}) (Iterator, error) {
 	start, end, err := getStartEndBz(startI, endI)
 	if err != nil {
 		return nil, err
@@ -153,7 +152,7 @@ func (i MultiKeyIndex) PrefixScan(store types.KVStore, startI interface{}, endI 
 // this as an endpoint to the public without further limits. See `LimitIterator`
 //
 // CONTRACT: No writes may happen within a domain while an iterator exists over it.
-func (i MultiKeyIndex) ReversePrefixScan(store types.KVStore, startI interface{}, endI interface{}) (Iterator, error) {
+func (i MultiKeyIndex) ReversePrefixScan(store sdk.KVStore, startI interface{}, endI interface{}) (Iterator, error) {
 	start, end, err := getStartEndBz(startI, endI)
 	if err != nil {
 		return nil, err
@@ -199,7 +198,7 @@ func getPrefixScanKeyBytes(keyI interface{}) ([]byte, error) {
 	return key, nil
 }
 
-func (i MultiKeyIndex) onSet(store types.KVStore, rowID RowID, newValue, oldValue proto.Message) error {
+func (i MultiKeyIndex) onSet(store sdk.KVStore, rowID RowID, newValue, oldValue codec.ProtoMarshaler) error {
 	pStore := prefix.NewStore(store, []byte{i.prefix})
 	if oldValue == nil {
 		return i.indexer.OnCreate(pStore, rowID, newValue)
@@ -207,7 +206,7 @@ func (i MultiKeyIndex) onSet(store types.KVStore, rowID RowID, newValue, oldValu
 	return i.indexer.OnUpdate(pStore, rowID, newValue, oldValue)
 }
 
-func (i MultiKeyIndex) onDelete(store types.KVStore, rowID RowID, oldValue proto.Message) error {
+func (i MultiKeyIndex) onDelete(store sdk.KVStore, rowID RowID, oldValue codec.ProtoMarshaler) error {
 	pStore := prefix.NewStore(store, []byte{i.prefix})
 	return i.indexer.OnDelete(pStore, rowID, oldValue)
 }
@@ -233,7 +232,7 @@ func NewUniqueIndex(tb Indexable, prefix byte, uniqueIndexerFunc UniqueIndexerFu
 
 // indexIterator uses rowGetter to lazy load new model values on request.
 type indexIterator struct {
-	store     types.KVStore
+	store     sdk.KVStore
 	rowGetter RowGetter
 	it        types.Iterator
 	indexKey  interface{}
@@ -242,7 +241,7 @@ type indexIterator struct {
 // LoadNext loads the next value in the sequence into the pointer passed as dest and returns the key. If there
 // are no more items the errors.ErrORMIteratorDone error is returned
 // The key is the rowID and not any MultiKeyIndex key.
-func (i indexIterator) LoadNext(dest proto.Message) (RowID, error) {
+func (i indexIterator) LoadNext(dest codec.ProtoMarshaler) (RowID, error) {
 	if !i.it.Valid() {
 		return nil, errors.ErrORMIteratorDone
 	}
@@ -257,7 +256,8 @@ func (i indexIterator) LoadNext(dest proto.Message) (RowID, error) {
 
 // Close releases the iterator and should be called at the end of iteration
 func (i indexIterator) Close() error {
-	return i.it.Close()
+	i.it.Close()
+	return nil
 }
 
 // PrefixRange turns a prefix into a (start, end) range. The start is the given prefix value and

@@ -5,14 +5,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"cosmossdk.io/x/upgrade/types"
-
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/types/errors"
+	"github.com/cosmos/cosmos-sdk/x/upgrade/types"
 )
 
-// GetQueryCmd returns the parent command for all x/upgrade CLI query commands.
+// GetQueryCmd returns the parent command for all x/upgrade CLi query commands.
 func GetQueryCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   types.ModuleName,

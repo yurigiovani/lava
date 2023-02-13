@@ -3,20 +3,19 @@ package mem_test
 import (
 	"testing"
 
-	"cosmossdk.io/store/cachekv"
-	pruningtypes "cosmossdk.io/store/pruning/types"
+	"github.com/cosmos/cosmos-sdk/store/cachekv"
 
 	"github.com/stretchr/testify/require"
 
-	"cosmossdk.io/store/mem"
-	"cosmossdk.io/store/types"
+	"github.com/cosmos/cosmos-sdk/store/mem"
+	"github.com/cosmos/cosmos-sdk/store/types"
 )
 
 func TestStore(t *testing.T) {
 	db := mem.NewStore()
-	require.Equal(t, types.StoreTypeMemory, db.GetStoreType())
-
 	key, value := []byte("key"), []byte("value")
+
+	require.Equal(t, types.StoreTypeMemory, db.GetStoreType())
 
 	require.Nil(t, db.Get(key))
 	db.Set(key, value)
@@ -45,10 +44,4 @@ func TestCommit(t *testing.T) {
 	require.True(t, id.IsZero())
 	require.True(t, db.LastCommitID().IsZero())
 	require.Equal(t, value, db.Get(key))
-}
-
-func TestStorePrunningOptions(t *testing.T) {
-	// this is a no-op
-	db := mem.NewStore()
-	require.Equal(t, pruningtypes.NewPruningOptions(pruningtypes.PruningUndefined), db.GetPruning())
 }

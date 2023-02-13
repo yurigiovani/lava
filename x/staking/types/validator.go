@@ -8,8 +8,9 @@ import (
 	"time"
 
 	"cosmossdk.io/math"
-	abci "github.com/cometbft/cometbft/abci/types"
-	cmtprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
+	abci "github.com/tendermint/tendermint/abci/types"
+	tmprotocrypto "github.com/tendermint/tendermint/proto/tendermint/crypto"
+	"sigs.k8s.io/yaml"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -47,19 +48,33 @@ func NewValidator(operator sdk.ValAddress, pubKey cryptotypes.PubKey, descriptio
 	}
 
 	return Validator{
-		OperatorAddress:         operator.String(),
-		ConsensusPubkey:         pkAny,
-		Jailed:                  false,
-		Status:                  Unbonded,
-		Tokens:                  math.ZeroInt(),
-		DelegatorShares:         math.LegacyZeroDec(),
-		Description:             description,
-		UnbondingHeight:         int64(0),
-		UnbondingTime:           time.Unix(0, 0).UTC(),
-		Commission:              NewCommission(math.LegacyZeroDec(), math.LegacyZeroDec(), math.LegacyZeroDec()),
-		MinSelfDelegation:       math.OneInt(),
-		UnbondingOnHoldRefCount: 0,
+		OperatorAddress:   operator.String(),
+		ConsensusPubkey:   pkAny,
+		Jailed:            false,
+		Status:            Unbonded,
+		Tokens:            sdk.ZeroInt(),
+		DelegatorShares:   sdk.ZeroDec(),
+		Description:       description,
+		UnbondingHeight:   int64(0),
+		UnbondingTime:     time.Unix(0, 0).UTC(),
+		Commission:        NewCommission(sdk.ZeroDec(), sdk.ZeroDec(), sdk.ZeroDec()),
+		MinSelfDelegation: sdk.OneInt(),
 	}, nil
+}
+
+// String implements the Stringer interface for a Validator object.
+func (v Validator) String() string {
+	bz, err := codec.ProtoMarshalJSON(&v, nil)
+	if err != nil {
+		panic(err)
+	}
+
+	out, err := yaml.JSONToYAML(bz)
+	if err != nil {
+		panic(err)
+	}
+
+	return string(out)
 }
 
 // Validators is a collection of Validator
@@ -186,6 +201,12 @@ func NewDescription(moniker, identity, website, securityContact, details string)
 	}
 }
 
+// String implements the Stringer interface for a Description object.
+func (d Description) String() string {
+	out, _ := yaml.Marshal(d)
+	return string(out)
+}
+
 // UpdateDescription updates the fields of a given description. An error is
 // returned if the resulting description contains an invalid length.
 func (d Description) UpdateDescription(d2 Description) (Description, error) {
@@ -291,18 +312,18 @@ func (v Validator) InvalidExRate() bool {
 }
 
 // calculate the token worth of provided shares
-func (v Validator) TokensFromShares(shares sdk.Dec) math.LegacyDec {
+func (v Validator) TokensFromShares(shares sdk.Dec) sdk.Dec {
 	return (shares.MulInt(v.Tokens)).Quo(v.DelegatorShares)
 }
 
 // calculate the token worth of provided shares, truncated
-func (v Validator) TokensFromSharesTruncated(shares sdk.Dec) math.LegacyDec {
+func (v Validator) TokensFromSharesTruncated(shares sdk.Dec) sdk.Dec {
 	return (shares.MulInt(v.Tokens)).QuoTruncate(v.DelegatorShares)
 }
 
 // TokensFromSharesRoundUp returns the token worth of provided shares, rounded
 // up.
-func (v Validator) TokensFromSharesRoundUp(shares sdk.Dec) math.LegacyDec {
+func (v Validator) TokensFromSharesRoundUp(shares sdk.Dec) sdk.Dec {
 	return (shares.MulInt(v.Tokens)).QuoRoundUp(v.DelegatorShares)
 }
 
@@ -310,7 +331,7 @@ func (v Validator) TokensFromSharesRoundUp(shares sdk.Dec) math.LegacyDec {
 // returns an error if the validator has no tokens.
 func (v Validator) SharesFromTokens(amt math.Int) (sdk.Dec, error) {
 	if v.Tokens.IsZero() {
-		return math.LegacyZeroDec(), ErrInsufficientShares
+		return sdk.ZeroDec(), ErrInsufficientShares
 	}
 
 	return v.GetDelegatorShares().MulInt(amt).QuoInt(v.GetTokens()), nil
@@ -320,7 +341,7 @@ func (v Validator) SharesFromTokens(amt math.Int) (sdk.Dec, error) {
 // a bond amount. It returns an error if the validator has no tokens.
 func (v Validator) SharesFromTokensTruncated(amt math.Int) (sdk.Dec, error) {
 	if v.Tokens.IsZero() {
-		return math.LegacyZeroDec(), ErrInsufficientShares
+		return sdk.ZeroDec(), ErrInsufficientShares
 	}
 
 	return v.GetDelegatorShares().MulInt(amt).QuoTruncate(sdk.NewDecFromInt(v.GetTokens())), nil
@@ -332,7 +353,7 @@ func (v Validator) BondedTokens() math.Int {
 		return v.Tokens
 	}
 
-	return math.ZeroInt()
+	return sdk.ZeroInt()
 }
 
 // ConsensusPower gets the consensus-engine power. Aa reduction of 10^6 from
@@ -467,16 +488,16 @@ func (v Validator) ConsPubKey() (cryptotypes.PubKey, error) {
 	return pk, nil
 }
 
-// TmConsPublicKey casts Validator.ConsensusPubkey to cmtprotocrypto.PubKey.
-func (v Validator) TmConsPublicKey() (cmtprotocrypto.PublicKey, error) {
+// TmConsPublicKey casts Validator.ConsensusPubkey to tmprotocrypto.PubKey.
+func (v Validator) TmConsPublicKey() (tmprotocrypto.PublicKey, error) {
 	pk, err := v.ConsPubKey()
 	if err != nil {
-		return cmtprotocrypto.PublicKey{}, err
+		return tmprotocrypto.PublicKey{}, err
 	}
 
 	tmPk, err := cryptocodec.ToTmProtoPublicKey(pk)
 	if err != nil {
-		return cmtprotocrypto.PublicKey{}, err
+		return tmprotocrypto.PublicKey{}, err
 	}
 
 	return tmPk, nil
@@ -497,9 +518,9 @@ func (v Validator) GetBondedTokens() math.Int { return v.BondedTokens() }
 func (v Validator) GetConsensusPower(r math.Int) int64 {
 	return v.ConsensusPower(r)
 }
-func (v Validator) GetCommission() math.LegacyDec      { return v.Commission.Rate }
-func (v Validator) GetMinSelfDelegation() math.Int     { return v.MinSelfDelegation }
-func (v Validator) GetDelegatorShares() math.LegacyDec { return v.DelegatorShares }
+func (v Validator) GetCommission() sdk.Dec         { return v.Commission.Rate }
+func (v Validator) GetMinSelfDelegation() math.Int { return v.MinSelfDelegation }
+func (v Validator) GetDelegatorShares() sdk.Dec    { return v.DelegatorShares }
 
 // UnpackInterfaces implements UnpackInterfacesMessage.UnpackInterfaces
 func (v Validator) UnpackInterfaces(unpacker codectypes.AnyUnpacker) error {

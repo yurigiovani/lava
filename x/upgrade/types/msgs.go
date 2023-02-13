@@ -11,6 +11,12 @@ var (
 	_, _ legacytx.LegacyMsg = &MsgSoftwareUpgrade{}, &MsgCancelUpgrade{}
 )
 
+// Route implements the LegacyMsg interface.
+func (m MsgSoftwareUpgrade) Route() string { return sdk.MsgTypeURL(&m) }
+
+// Type implements the LegacyMsg interface.
+func (m MsgSoftwareUpgrade) Type() string { return sdk.MsgTypeURL(&m) }
+
 // GetSignBytes implements the LegacyMsg interface.
 func (m MsgSoftwareUpgrade) GetSignBytes() []byte {
 	return sdk.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
@@ -34,6 +40,12 @@ func (m *MsgSoftwareUpgrade) GetSigners() []sdk.AccAddress {
 	addr, _ := sdk.AccAddressFromBech32(m.Authority)
 	return []sdk.AccAddress{addr}
 }
+
+// Route implements the LegacyMsg interface.
+func (m MsgCancelUpgrade) Route() string { return sdk.MsgTypeURL(&m) }
+
+// Type implements the LegacyMsg interface.
+func (m MsgCancelUpgrade) Type() string { return sdk.MsgTypeURL(&m) }
 
 // GetSignBytes implements the LegacyMsg interface.
 func (m MsgCancelUpgrade) GetSignBytes() []byte {

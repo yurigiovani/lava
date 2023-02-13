@@ -1,4 +1,4 @@
-package cli_test
+package cli
 
 import (
 	"context"
@@ -7,32 +7,23 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"cosmossdk.io/depinject"
 	"github.com/cosmos/cosmos-sdk/client"
-	"github.com/cosmos/cosmos-sdk/codec"
+	simappparams "github.com/cosmos/cosmos-sdk/simapp/params"
 	"github.com/cosmos/cosmos-sdk/testutil"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/auth/client/cli"
-	authtestutil "github.com/cosmos/cosmos-sdk/x/auth/testutil"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 )
 
 func TestGetCommandEncode(t *testing.T) {
-	var (
-		txCfg       client.TxConfig
-		legacyAmino *codec.LegacyAmino
-		codec       codec.Codec
-	)
+	encodingConfig := simappparams.MakeTestEncodingConfig()
 
-	err := depinject.Inject(
-		authtestutil.AppConfig,
-		&txCfg,
-		&legacyAmino,
-		&codec,
-	)
-	require.NoError(t, err)
-
-	cmd := cli.GetEncodeCommand()
+	cmd := GetEncodeCommand()
 	_ = testutil.ApplyMockIODiscardOutErr(cmd)
+
+	authtypes.RegisterLegacyAminoCodec(encodingConfig.Amino)
+	sdk.RegisterLegacyAminoCodec(encodingConfig.Amino)
+
+	txCfg := encodingConfig.TxConfig
 
 	// Build a test transaction
 	builder := txCfg.NewTxBuilder()
@@ -47,8 +38,8 @@ func TestGetCommandEncode(t *testing.T) {
 
 	ctx := context.Background()
 	clientCtx := client.Context{}.
-		WithTxConfig(txCfg).
-		WithCodec(codec)
+		WithTxConfig(encodingConfig.TxConfig).
+		WithCodec(encodingConfig.Codec)
 	ctx = context.WithValue(ctx, client.ClientContextKey, &clientCtx)
 
 	cmd.SetArgs([]string{txFileName})
@@ -57,27 +48,18 @@ func TestGetCommandEncode(t *testing.T) {
 }
 
 func TestGetCommandDecode(t *testing.T) {
-	var (
-		txCfg       client.TxConfig
-		legacyAmino *codec.LegacyAmino
-		codec       codec.Codec
-	)
-
-	err := depinject.Inject(
-		authtestutil.AppConfig,
-		&txCfg,
-		&legacyAmino,
-		&codec,
-	)
-	require.NoError(t, err)
+	encodingConfig := simappparams.MakeTestEncodingConfig()
 
 	clientCtx := client.Context{}.
-		WithTxConfig(txCfg).
-		WithCodec(codec)
+		WithTxConfig(encodingConfig.TxConfig).
+		WithCodec(encodingConfig.Codec)
 
-	cmd := cli.GetDecodeCommand()
+	cmd := GetDecodeCommand()
 	_ = testutil.ApplyMockIODiscardOutErr(cmd)
 
+	sdk.RegisterLegacyAminoCodec(encodingConfig.Amino)
+
+	txCfg := encodingConfig.TxConfig
 	clientCtx = clientCtx.WithTxConfig(txCfg)
 
 	// Build a test transaction

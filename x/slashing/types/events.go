@@ -15,4 +15,5 @@ const (
 
 	AttributeValueDoubleSign       = "double_sign"
 	AttributeValueMissingSignature = "missing_signature"
+	AttributeValueCategory         = ModuleName
 )

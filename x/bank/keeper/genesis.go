@@ -10,13 +10,7 @@ import (
 
 // InitGenesis initializes the bank module's state from a given genesis state.
 func (k BaseKeeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) {
-	if err := k.SetParams(ctx, genState.Params); err != nil {
-		panic(err)
-	}
-
-	for _, se := range genState.GetAllSendEnabled() {
-		k.SetSendEnabled(ctx, se.Denom, se.Enabled)
-	}
+	k.SetParams(ctx, genState.Params)
 
 	totalSupply := sdk.Coins{}
 	genState.Balances = types.SanitizeGenesisBalances(genState.Balances)
@@ -31,7 +25,7 @@ func (k BaseKeeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) {
 		totalSupply = totalSupply.Add(balance.Coins...)
 	}
 
-	if !genState.Supply.Empty() && !genState.Supply.Equal(totalSupply) {
+	if !genState.Supply.Empty() && !genState.Supply.IsEqual(totalSupply) {
 		panic(fmt.Errorf("genesis supply is incorrect, expected %v, got %v", genState.Supply, totalSupply))
 	}
 
@@ -51,12 +45,10 @@ func (k BaseKeeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 		panic(fmt.Errorf("unable to fetch total supply %v", err))
 	}
 
-	rv := types.NewGenesisState(
+	return types.NewGenesisState(
 		k.GetParams(ctx),
 		k.GetAccountsBalances(ctx),
 		totalSupply,
 		k.GetAllDenomMetaData(ctx),
-		k.GetAllSendEnabledEntries(ctx),
 	)
-	return rv
 }

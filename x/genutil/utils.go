@@ -3,16 +3,16 @@ package genutil
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
-	cfg "github.com/cometbft/cometbft/config"
-	tmed25519 "github.com/cometbft/cometbft/crypto/ed25519"
-	"github.com/cometbft/cometbft/p2p"
-	"github.com/cometbft/cometbft/privval"
-	cmttypes "github.com/cometbft/cometbft/types"
 	"github.com/cosmos/go-bip39"
+	cfg "github.com/tendermint/tendermint/config"
+	tmed25519 "github.com/tendermint/tendermint/crypto/ed25519"
+	tmos "github.com/tendermint/tendermint/libs/os"
+	"github.com/tendermint/tendermint/p2p"
+	"github.com/tendermint/tendermint/privval"
+	tmtypes "github.com/tendermint/tendermint/types"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
@@ -20,7 +20,7 @@ import (
 
 // ExportGenesisFile creates and writes the genesis configuration to disk. An
 // error is returned if building or writing the configuration to file fails.
-func ExportGenesisFile(genDoc *cmttypes.GenesisDoc, genFile string) error {
+func ExportGenesisFile(genDoc *tmtypes.GenesisDoc, genFile string) error {
 	if err := genDoc.ValidateAndComplete(); err != nil {
 		return err
 	}
@@ -31,10 +31,10 @@ func ExportGenesisFile(genDoc *cmttypes.GenesisDoc, genFile string) error {
 // ExportGenesisFileWithTime creates and writes the genesis configuration to disk.
 // An error is returned if building or writing the configuration to file fails.
 func ExportGenesisFileWithTime(
-	genFile, chainID string, validators []cmttypes.GenesisValidator,
+	genFile, chainID string, validators []tmtypes.GenesisValidator,
 	appState json.RawMessage, genTime time.Time,
 ) error {
-	genDoc := cmttypes.GenesisDoc{
+	genDoc := tmtypes.GenesisDoc{
 		GenesisTime: genTime,
 		ChainID:     chainID,
 		Validators:  validators,
@@ -67,13 +67,13 @@ func InitializeNodeValidatorFilesFromMnemonic(config *cfg.Config, mnemonic strin
 	nodeID = string(nodeKey.ID())
 
 	pvKeyFile := config.PrivValidatorKeyFile()
-	if err := os.MkdirAll(filepath.Dir(pvKeyFile), 0o777); err != nil {
-		return "", nil, fmt.Errorf("could not create directory %q: %w", filepath.Dir(pvKeyFile), err)
+	if err := tmos.EnsureDir(filepath.Dir(pvKeyFile), 0o777); err != nil {
+		return "", nil, err
 	}
 
 	pvStateFile := config.PrivValidatorStateFile()
-	if err := os.MkdirAll(filepath.Dir(pvStateFile), 0o777); err != nil {
-		return "", nil, fmt.Errorf("could not create directory %q: %w", filepath.Dir(pvStateFile), err)
+	if err := tmos.EnsureDir(filepath.Dir(pvStateFile), 0o777); err != nil {
+		return "", nil, err
 	}
 
 	var filePV *privval.FilePV

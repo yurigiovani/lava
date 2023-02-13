@@ -1,27 +1,25 @@
-//nolint:unused // this file contains tests
 package orm
 
 import (
 	"testing"
 
-	storetypes "cosmossdk.io/store/types"
-
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/codec/types"
-	"github.com/cosmos/cosmos-sdk/testutil/testdata"
-
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/stretchr/testify/require"
 	"pgregory.net/rapid"
+
+	"github.com/cosmos/cosmos-sdk/testutil/testdata"
 )
 
 func TestPrimaryKeyTable(t *testing.T) {
-	rapid.Check(t, rapid.Run[*primaryKeyMachine]())
+	rapid.Check(t, rapid.Run(&primaryKeyMachine{}))
 }
 
 // primaryKeyMachine is a state machine model of the PrimaryKeyTable. The state
 // is modelled as a map of strings to TableModels.
 type primaryKeyMachine struct {
-	store storetypes.KVStore
+	store sdk.KVStore
 	table *PrimaryKeyTable
 	state map[string]*testdata.TableModel
 }
@@ -41,16 +39,17 @@ func (m *primaryKeyMachine) stateKeys() []string {
 
 // Generate a TableModel that has a 50% chance of being a part of the existing
 // state
-func (m *primaryKeyMachine) genTableModel() *rapid.Generator[*testdata.TableModel] {
+func (m *primaryKeyMachine) genTableModel() *rapid.Generator {
 	genStateTableModel := rapid.Custom(func(t *rapid.T) *testdata.TableModel {
-		pk := rapid.SampledFrom(m.stateKeys()).Draw(t, "key")
+		pk := rapid.SampledFrom(m.stateKeys()).Draw(t, "key").(string)
 		return m.state[pk]
 	})
 
 	if len(m.stateKeys()) == 0 {
 		return genTableModel
+	} else {
+		return rapid.OneOf(genTableModel, genStateTableModel)
 	}
-	return rapid.OneOf(genTableModel, genStateTableModel)
 }
 
 // Init creates a new instance of the state machine model by building the real
@@ -58,7 +57,7 @@ func (m *primaryKeyMachine) genTableModel() *rapid.Generator[*testdata.TableMode
 func (m *primaryKeyMachine) Init(t *rapid.T) {
 	// Create context
 	ctx := NewMockContext()
-	m.store = ctx.KVStore(storetypes.NewKVStoreKey("test"))
+	m.store = ctx.KVStore(sdk.NewKVStoreKey("test"))
 
 	// Create primary key table
 	interfaceRegistry := types.NewInterfaceRegistry()
@@ -87,7 +86,7 @@ func (m *primaryKeyMachine) Check(t *rapid.T) {
 // Create is one of the model commands. It adds an object to the table, creating
 // an error if it already exists.
 func (m *primaryKeyMachine) Create(t *rapid.T) {
-	g := genTableModel.Draw(t, "g")
+	g := genTableModel.Draw(t, "g").(*testdata.TableModel)
 	pk := string(PrimaryKey(g))
 
 	t.Logf("pk: %v", pk)
@@ -106,9 +105,9 @@ func (m *primaryKeyMachine) Create(t *rapid.T) {
 // Update is one of the model commands. It updates the value at a given primary
 // key and fails if that primary key doesn't already exist in the table.
 func (m *primaryKeyMachine) Update(t *rapid.T) {
-	tm := m.genTableModel().Draw(t, "tm")
+	tm := m.genTableModel().Draw(t, "tm").(*testdata.TableModel)
 
-	newName := rapid.StringN(1, 100, 150).Draw(t, "newName")
+	newName := rapid.StringN(1, 100, 150).Draw(t, "newName").(string)
 	tm.Name = newName
 
 	// Perform the real Update
@@ -129,7 +128,7 @@ func (m *primaryKeyMachine) Update(t *rapid.T) {
 // Set is one of the model commands. It sets the value at a key in the table
 // whether it exists or not.
 func (m *primaryKeyMachine) Set(t *rapid.T) {
-	g := genTableModel.Draw(t, "g")
+	g := genTableModel.Draw(t, "g").(*testdata.TableModel)
 	pk := string(PrimaryKey(g))
 
 	err := m.table.Set(m.store, g)
@@ -142,7 +141,7 @@ func (m *primaryKeyMachine) Set(t *rapid.T) {
 // primary key from the table and returns an error if that primary key doesn't
 // already exist in the table.
 func (m *primaryKeyMachine) Delete(t *rapid.T) {
-	tm := m.genTableModel().Draw(t, "tm")
+	tm := m.genTableModel().Draw(t, "tm").(*testdata.TableModel)
 
 	// Perform the real Delete
 	err := m.table.Delete(m.store, tm)
@@ -162,7 +161,7 @@ func (m *primaryKeyMachine) Delete(t *rapid.T) {
 // Has is one of the model commands. It checks whether a key already exists in
 // the table.
 func (m *primaryKeyMachine) Has(t *rapid.T) {
-	pk := PrimaryKey(m.genTableModel().Draw(t, "g"))
+	pk := PrimaryKey(m.genTableModel().Draw(t, "g").(*testdata.TableModel))
 
 	realHas := m.table.Has(m.store, pk)
 	modelHas := m.state[string(pk)] != nil
@@ -173,7 +172,7 @@ func (m *primaryKeyMachine) Has(t *rapid.T) {
 // GetOne is one of the model commands. It fetches an object from the table by
 // its primary key and returns an error if that primary key isn't in the table.
 func (m *primaryKeyMachine) GetOne(t *rapid.T) {
-	pk := PrimaryKey(m.genTableModel().Draw(t, "tm"))
+	pk := PrimaryKey(m.genTableModel().Draw(t, "tm").(*testdata.TableModel))
 
 	var tm testdata.TableModel
 

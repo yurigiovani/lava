@@ -9,4 +9,6 @@ const (
 
 	AttributeKeyGranter = "granter"
 	AttributeKeyGrantee = "grantee"
+
+	AttributeValueCategory = ModuleName
 )

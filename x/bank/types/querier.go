@@ -23,24 +23,15 @@ func NewQueryBalanceRequest(addr sdk.AccAddress, denom string) *QueryBalanceRequ
 // NewQueryAllBalancesRequest creates a new instance of QueryAllBalancesRequest.
 //
 //nolint:interfacer
-func NewQueryAllBalancesRequest(addr sdk.AccAddress, req *query.PageRequest, resolveDenom bool) *QueryAllBalancesRequest {
-	return &QueryAllBalancesRequest{Address: addr.String(), Pagination: req, ResolveDenom: resolveDenom}
+func NewQueryAllBalancesRequest(addr sdk.AccAddress, req *query.PageRequest) *QueryAllBalancesRequest {
+	return &QueryAllBalancesRequest{Address: addr.String(), Pagination: req}
 }
 
 // NewQuerySpendableBalancesRequest creates a new instance of a
 // QuerySpendableBalancesRequest.
-//
-//nolint:interfacer
+// nolint:interfacer
 func NewQuerySpendableBalancesRequest(addr sdk.AccAddress, req *query.PageRequest) *QuerySpendableBalancesRequest {
 	return &QuerySpendableBalancesRequest{Address: addr.String(), Pagination: req}
-}
-
-// NewQuerySpendableBalanceByDenomRequest creates a new instance of a
-// QuerySpendableBalanceByDenomRequest.
-//
-//nolint:interfacer
-func NewQuerySpendableBalanceByDenomRequest(addr sdk.AccAddress, denom string) *QuerySpendableBalanceByDenomRequest {
-	return &QuerySpendableBalanceByDenomRequest{Address: addr.String(), Denom: denom}
 }
 
 // QueryTotalSupplyParams defines the params for the following queries:

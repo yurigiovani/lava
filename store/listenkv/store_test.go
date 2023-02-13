@@ -6,15 +6,16 @@ import (
 	"io"
 	"testing"
 
-	"cosmossdk.io/store/dbadapter"
-	"cosmossdk.io/store/internal/kv"
-	"cosmossdk.io/store/listenkv"
-	"cosmossdk.io/store/prefix"
-	"cosmossdk.io/store/types"
+	"github.com/cosmos/cosmos-sdk/codec"
+	codecTypes "github.com/cosmos/cosmos-sdk/codec/types"
+	"github.com/cosmos/cosmos-sdk/store/dbadapter"
+	"github.com/cosmos/cosmos-sdk/store/listenkv"
+	"github.com/cosmos/cosmos-sdk/store/prefix"
+	"github.com/cosmos/cosmos-sdk/store/types"
 
 	"github.com/stretchr/testify/require"
 
-	dbm "github.com/cosmos/cosmos-db"
+	dbm "github.com/tendermint/tm-db"
 )
 
 func bz(s string) []byte { return []byte(s) }
@@ -22,15 +23,16 @@ func bz(s string) []byte { return []byte(s) }
 func keyFmt(i int) []byte { return bz(fmt.Sprintf("key%0.8d", i)) }
 func valFmt(i int) []byte { return bz(fmt.Sprintf("value%0.8d", i)) }
 
-var kvPairs = []kv.Pair{
+var kvPairs = []types.KVPair{
 	{Key: keyFmt(1), Value: valFmt(1)},
 	{Key: keyFmt(2), Value: valFmt(2)},
 	{Key: keyFmt(3), Value: valFmt(3)},
 }
 
 var (
-	testStoreKey   = types.NewKVStoreKey("listen_test")
-	testMarshaller = types.NewTestCodec()
+	testStoreKey      = types.NewKVStoreKey("listen_test")
+	interfaceRegistry = codecTypes.NewInterfaceRegistry()
+	testMarshaller    = codec.NewProtoCodec(interfaceRegistry)
 )
 
 func newListenKVStore(w io.Writer) *listenkv.Store {

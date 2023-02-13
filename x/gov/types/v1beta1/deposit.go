@@ -3,6 +3,8 @@ package v1beta1
 import (
 	"fmt"
 
+	"sigs.k8s.io/yaml"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -13,9 +15,14 @@ func NewDeposit(proposalID uint64, depositor sdk.AccAddress, amount sdk.Coins) D
 	return Deposit{proposalID, depositor.String(), amount}
 }
 
+func (d Deposit) String() string {
+	out, _ := yaml.Marshal(d)
+	return string(out)
+}
+
 // Empty returns whether a deposit is empty.
 func (d Deposit) Empty() bool {
-	return d.String() == (&Deposit{}).String()
+	return d.String() == Deposit{}.String()
 }
 
 // Deposits is a collection of Deposit objects
@@ -36,7 +43,6 @@ func (d Deposits) Equal(other Deposits) bool {
 	return true
 }
 
-// String implements stringer interface
 func (d Deposits) String() string {
 	if len(d) == 0 {
 		return "[]"

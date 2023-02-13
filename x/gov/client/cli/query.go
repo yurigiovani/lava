@@ -32,8 +32,8 @@ func GetQueryCmd() *cobra.Command {
 		GetCmdQueryProposals(),
 		GetCmdQueryVote(),
 		GetCmdQueryVotes(),
-		GetCmdQueryParams(),
 		GetCmdQueryParam(),
+		GetCmdQueryParams(),
 		GetCmdQueryProposer(),
 		GetCmdQueryDeposit(),
 		GetCmdQueryDeposits(),
@@ -509,8 +509,6 @@ $ %s query gov tally 1
 }
 
 // GetCmdQueryParams implements the query params command.
-//
-//nolint:staticcheck // this function contains deprecated commands that we need.
 func GetCmdQueryParams() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "params",
@@ -534,8 +532,23 @@ $ %s query gov params
 
 			// Query store for all 3 params
 			ctx := cmd.Context()
+			votingRes, err := queryClient.Params(
+				ctx,
+				&v1.QueryParamsRequest{ParamsType: "voting"},
+			)
+			if err != nil {
+				return err
+			}
 
-			res, err := queryClient.Params(
+			tallyRes, err := queryClient.Params(
+				ctx,
+				&v1.QueryParamsRequest{ParamsType: "tallying"},
+			)
+			if err != nil {
+				return err
+			}
+
+			depositRes, err := queryClient.Params(
 				ctx,
 				&v1.QueryParamsRequest{ParamsType: "deposit"},
 			)
@@ -543,13 +556,13 @@ $ %s query gov params
 				return err
 			}
 
-			vp := v1.NewVotingParams(res.Params.VotingPeriod)
-			res.VotingParams = &vp
+			params := v1.NewParams(
+				*votingRes.GetVotingParams(),
+				*tallyRes.GetTallyParams(),
+				*depositRes.GetDepositParams(),
+			)
 
-			tp := v1.NewTallyParams(res.Params.Quorum, res.Params.Threshold, res.Params.VetoThreshold)
-			res.TallyParams = &tp
-
-			return clientCtx.PrintProto(res)
+			return clientCtx.PrintObjectLegacy(params)
 		},
 	}
 
@@ -566,6 +579,7 @@ func GetCmdQueryParam() *cobra.Command {
 		Short: "Query the parameters (voting|tallying|deposit) of the governance process",
 		Long: strings.TrimSpace(
 			fmt.Sprintf(`Query the all the parameters for the governance process.
+
 Example:
 $ %s query gov param voting
 $ %s query gov param tallying
@@ -591,7 +605,6 @@ $ %s query gov param deposit
 			}
 
 			var out fmt.Stringer
-			//nolint:staticcheck // this switch statement contains deprecated commands that we need.
 			switch args[0] {
 			case "voting":
 				out = res.GetVotingParams()

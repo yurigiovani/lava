@@ -2,16 +2,31 @@ package types
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
 	"cosmossdk.io/math"
+	"sigs.k8s.io/yaml"
+
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 // Implements Delegation interface
 var _ DelegationI = Delegation{}
+
+// String implements the Stringer interface for a DVPair object.
+func (dv DVPair) String() string {
+	out, _ := yaml.Marshal(dv)
+	return string(out)
+}
+
+// String implements the Stringer interface for a DVVTriplet object.
+func (dvv DVVTriplet) String() string {
+	out, _ := yaml.Marshal(dvv)
+	return string(out)
+}
 
 // NewDelegation creates a new delegation object
 //
@@ -59,7 +74,13 @@ func (d Delegation) GetValidatorAddr() sdk.ValAddress {
 	}
 	return addr
 }
-func (d Delegation) GetShares() math.LegacyDec { return d.Shares }
+func (d Delegation) GetShares() sdk.Dec { return d.Shares }
+
+// String returns a human readable string representation of a Delegation.
+func (d Delegation) String() string {
+	out, _ := yaml.Marshal(d)
+	return string(out)
+}
 
 // Delegations is a collection of delegations
 type Delegations []Delegation
@@ -72,15 +93,19 @@ func (d Delegations) String() (out string) {
 	return strings.TrimSpace(out)
 }
 
-func NewUnbondingDelegationEntry(creationHeight int64, completionTime time.Time, balance math.Int, unbondingID uint64) UnbondingDelegationEntry {
+func NewUnbondingDelegationEntry(creationHeight int64, completionTime time.Time, balance math.Int) UnbondingDelegationEntry {
 	return UnbondingDelegationEntry{
-		CreationHeight:          creationHeight,
-		CompletionTime:          completionTime,
-		InitialBalance:          balance,
-		Balance:                 balance,
-		UnbondingId:             unbondingID,
-		UnbondingOnHoldRefCount: 0,
+		CreationHeight: creationHeight,
+		CompletionTime: completionTime,
+		InitialBalance: balance,
+		Balance:        balance,
 	}
+}
+
+// String implements the stringer interface for a UnbondingDelegationEntry.
+func (e UnbondingDelegationEntry) String() string {
+	out, _ := yaml.Marshal(e)
+	return string(out)
 }
 
 // IsMature - is the current entry mature
@@ -88,71 +113,26 @@ func (e UnbondingDelegationEntry) IsMature(currentTime time.Time) bool {
 	return !e.CompletionTime.After(currentTime)
 }
 
-// OnHold - is the current entry on hold due to external modules
-func (e UnbondingDelegationEntry) OnHold() bool {
-	return e.UnbondingOnHoldRefCount > 0
-}
-
-// return the unbonding delegation entry
-func MustMarshalUBDE(cdc codec.BinaryCodec, ubd UnbondingDelegationEntry) []byte {
-	return cdc.MustMarshal(&ubd)
-}
-
-// unmarshal a unbonding delegation entry from a store value
-func MustUnmarshalUBDE(cdc codec.BinaryCodec, value []byte) UnbondingDelegationEntry {
-	ubd, err := UnmarshalUBDE(cdc, value)
-	if err != nil {
-		panic(err)
-	}
-
-	return ubd
-}
-
-// unmarshal a unbonding delegation entry from a store value
-func UnmarshalUBDE(cdc codec.BinaryCodec, value []byte) (ubd UnbondingDelegationEntry, err error) {
-	err = cdc.Unmarshal(value, &ubd)
-	return ubd, err
-}
-
 // NewUnbondingDelegation - create a new unbonding delegation object
 //
 //nolint:interfacer
 func NewUnbondingDelegation(
 	delegatorAddr sdk.AccAddress, validatorAddr sdk.ValAddress,
-	creationHeight int64, minTime time.Time, balance math.Int, id uint64,
+	creationHeight int64, minTime time.Time, balance math.Int,
 ) UnbondingDelegation {
 	return UnbondingDelegation{
 		DelegatorAddress: delegatorAddr.String(),
 		ValidatorAddress: validatorAddr.String(),
 		Entries: []UnbondingDelegationEntry{
-			NewUnbondingDelegationEntry(creationHeight, minTime, balance, id),
+			NewUnbondingDelegationEntry(creationHeight, minTime, balance),
 		},
 	}
 }
 
 // AddEntry - append entry to the unbonding delegation
-func (ubd *UnbondingDelegation) AddEntry(creationHeight int64, minTime time.Time, balance math.Int, unbondingID uint64) {
-	// Check the entries exists with creation_height and complete_time
-	entryIndex := -1
-	for index, ubdEntry := range ubd.Entries {
-		if ubdEntry.CreationHeight == creationHeight && ubdEntry.CompletionTime.Equal(minTime) {
-			entryIndex = index
-			break
-		}
-	}
-	// entryIndex exists
-	if entryIndex != -1 {
-		ubdEntry := ubd.Entries[entryIndex]
-		ubdEntry.Balance = ubdEntry.Balance.Add(balance)
-		ubdEntry.InitialBalance = ubdEntry.InitialBalance.Add(balance)
-
-		// update the entry
-		ubd.Entries[entryIndex] = ubdEntry
-	} else {
-		// append the new unbond delegation entry
-		entry := NewUnbondingDelegationEntry(creationHeight, minTime, balance, unbondingID)
-		ubd.Entries = append(ubd.Entries, entry)
-	}
+func (ubd *UnbondingDelegation) AddEntry(creationHeight int64, minTime time.Time, balance math.Int) {
+	entry := NewUnbondingDelegationEntry(creationHeight, minTime, balance)
+	ubd.Entries = append(ubd.Entries, entry)
 }
 
 // RemoveEntry - remove entry at index i to the unbonding delegation
@@ -181,6 +161,23 @@ func UnmarshalUBD(cdc codec.BinaryCodec, value []byte) (ubd UnbondingDelegation,
 	return ubd, err
 }
 
+// String returns a human readable string representation of an UnbondingDelegation.
+func (ubd UnbondingDelegation) String() string {
+	out := fmt.Sprintf(`Unbonding Delegations between:
+  Delegator:                 %s
+  Validator:                 %s
+	Entries:`, ubd.DelegatorAddress, ubd.ValidatorAddress)
+	for i, entry := range ubd.Entries {
+		out += fmt.Sprintf(`    Unbonding Delegation %d:
+      Creation Height:           %v
+      Min time to unbond (unix): %v
+      Expected balance:          %s`, i, entry.CreationHeight,
+			entry.CompletionTime, entry.Balance)
+	}
+
+	return out
+}
+
 // UnbondingDelegations is a collection of UnbondingDelegation
 type UnbondingDelegations []UnbondingDelegation
 
@@ -192,15 +189,19 @@ func (ubds UnbondingDelegations) String() (out string) {
 	return strings.TrimSpace(out)
 }
 
-func NewRedelegationEntry(creationHeight int64, completionTime time.Time, balance math.Int, sharesDst sdk.Dec, id uint64) RedelegationEntry {
+func NewRedelegationEntry(creationHeight int64, completionTime time.Time, balance math.Int, sharesDst sdk.Dec) RedelegationEntry {
 	return RedelegationEntry{
-		CreationHeight:          creationHeight,
-		CompletionTime:          completionTime,
-		InitialBalance:          balance,
-		SharesDst:               sharesDst,
-		UnbondingId:             id,
-		UnbondingOnHoldRefCount: 0,
+		CreationHeight: creationHeight,
+		CompletionTime: completionTime,
+		InitialBalance: balance,
+		SharesDst:      sharesDst,
 	}
+}
+
+// String implements the Stringer interface for a RedelegationEntry object.
+func (e RedelegationEntry) String() string {
+	out, _ := yaml.Marshal(e)
+	return string(out)
 }
 
 // IsMature - is the current entry mature
@@ -208,29 +209,24 @@ func (e RedelegationEntry) IsMature(currentTime time.Time) bool {
 	return !e.CompletionTime.After(currentTime)
 }
 
-// OnHold - is the current entry on hold due to external modules
-func (e RedelegationEntry) OnHold() bool {
-	return e.UnbondingOnHoldRefCount > 0
-}
-
 //nolint:interfacer
 func NewRedelegation(
 	delegatorAddr sdk.AccAddress, validatorSrcAddr, validatorDstAddr sdk.ValAddress,
-	creationHeight int64, minTime time.Time, balance math.Int, sharesDst sdk.Dec, id uint64,
+	creationHeight int64, minTime time.Time, balance math.Int, sharesDst sdk.Dec,
 ) Redelegation {
 	return Redelegation{
 		DelegatorAddress:    delegatorAddr.String(),
 		ValidatorSrcAddress: validatorSrcAddr.String(),
 		ValidatorDstAddress: validatorDstAddr.String(),
 		Entries: []RedelegationEntry{
-			NewRedelegationEntry(creationHeight, minTime, balance, sharesDst, id),
+			NewRedelegationEntry(creationHeight, minTime, balance, sharesDst),
 		},
 	}
 }
 
 // AddEntry - append entry to the unbonding delegation
-func (red *Redelegation) AddEntry(creationHeight int64, minTime time.Time, balance math.Int, sharesDst sdk.Dec, id uint64) {
-	entry := NewRedelegationEntry(creationHeight, minTime, balance, sharesDst, id)
+func (red *Redelegation) AddEntry(creationHeight int64, minTime time.Time, balance math.Int, sharesDst sdk.Dec) {
+	entry := NewRedelegationEntry(creationHeight, minTime, balance, sharesDst)
 	red.Entries = append(red.Entries, entry)
 }
 
@@ -260,6 +256,30 @@ func UnmarshalRED(cdc codec.BinaryCodec, value []byte) (red Redelegation, err er
 	return red, err
 }
 
+// String returns a human readable string representation of a Redelegation.
+func (red Redelegation) String() string {
+	out := fmt.Sprintf(`Redelegations between:
+  Delegator:                 %s
+  Source Validator:          %s
+  Destination Validator:     %s
+  Entries:
+`,
+		red.DelegatorAddress, red.ValidatorSrcAddress, red.ValidatorDstAddress,
+	)
+
+	for i, entry := range red.Entries {
+		out += fmt.Sprintf(`    Redelegation Entry #%d:
+      Creation height:           %v
+      Min time to unbond (unix): %v
+      Dest Shares:               %s
+`,
+			i, entry.CreationHeight, entry.CompletionTime, entry.SharesDst,
+		)
+	}
+
+	return strings.TrimRight(out, "\n")
+}
+
 // Redelegations are a collection of Redelegation
 type Redelegations []Redelegation
 
@@ -282,6 +302,11 @@ func NewDelegationResp(
 		Delegation: NewDelegation(delegatorAddr, validatorAddr, shares),
 		Balance:    balance,
 	}
+}
+
+// String implements the Stringer interface for DelegationResponse.
+func (d DelegationResponse) String() string {
+	return fmt.Sprintf("%s\n  Balance:   %s", d.Delegation.String(), d.Balance)
 }
 
 type delegationRespAlias DelegationResponse
@@ -328,10 +353,10 @@ func NewRedelegationResponse(
 
 // NewRedelegationEntryResponse creates a new RedelegationEntryResponse instance.
 func NewRedelegationEntryResponse(
-	creationHeight int64, completionTime time.Time, sharesDst sdk.Dec, initialBalance, balance math.Int, unbondingID uint64,
+	creationHeight int64, completionTime time.Time, sharesDst sdk.Dec, initialBalance, balance math.Int,
 ) RedelegationEntryResponse {
 	return RedelegationEntryResponse{
-		RedelegationEntry: NewRedelegationEntry(creationHeight, completionTime, initialBalance, sharesDst, unbondingID),
+		RedelegationEntry: NewRedelegationEntry(creationHeight, completionTime, initialBalance, sharesDst),
 		Balance:           balance,
 	}
 }

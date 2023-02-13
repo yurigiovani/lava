@@ -4,5 +4,6 @@ package types
 const (
 	EventTypeInvariant = "invariant"
 
-	AttributeKeyRoute = "route"
+	AttributeValueCrisis = ModuleName
+	AttributeKeyRoute    = "route"
 )

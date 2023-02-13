@@ -1,7 +1,7 @@
 package multisig
 
 import (
-	"github.com/cometbft/cometbft/crypto/sr25519"
+	"github.com/tendermint/tendermint/crypto/sr25519"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
@@ -15,7 +15,8 @@ const (
 	PubKeyAminoRoute = "tendermint/PubKeyMultisigThreshold"
 )
 
-// AminoCdc is being deprecated in the SDK. But even if you need to
+// nolint
+// Deprecated: Amino is being deprecated in the SDK. But even if you need to
 // use Amino for some reason, please use `codec/legacy.Cdc` instead.
 var AminoCdc = codec.NewLegacyAmino()
 

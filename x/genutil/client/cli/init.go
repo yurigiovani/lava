@@ -7,13 +7,14 @@ import (
 	"os"
 	"path/filepath"
 
-	cfg "github.com/cometbft/cometbft/config"
-	"github.com/cometbft/cometbft/libs/cli"
-	cmtrand "github.com/cometbft/cometbft/libs/rand"
-	"github.com/cometbft/cometbft/types"
 	"github.com/cosmos/go-bip39"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
+	cfg "github.com/tendermint/tendermint/config"
+	"github.com/tendermint/tendermint/libs/cli"
+	tmos "github.com/tendermint/tendermint/libs/os"
+	tmrand "github.com/tendermint/tendermint/libs/rand"
+	"github.com/tendermint/tendermint/types"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
@@ -22,6 +23,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	"github.com/cosmos/cosmos-sdk/x/genutil"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 const (
@@ -31,8 +33,8 @@ const (
 	// FlagSeed defines a flag to initialize the private validator key from a specific seed.
 	FlagRecover = "recover"
 
-	// FlagDefaultBondDenom defines the default denom to use in the genesis file.
-	FlagDefaultBondDenom = "default-denom"
+	// FlagStakingBondDenom defines a flag to specify the staking token in the genesis file.
+	FlagStakingBondDenom = "staking-bond-denom"
 )
 
 type printInfo struct {
@@ -86,7 +88,7 @@ func InitCmd(mbm module.BasicManager, defaultNodeHome string) *cobra.Command {
 			case clientCtx.ChainID != "":
 				chainID = clientCtx.ChainID
 			default:
-				chainID = fmt.Sprintf("test-chain-%v", cmtrand.Str(6))
+				chainID = fmt.Sprintf("test-chain-%v", tmrand.Str(6))
 			}
 
 			// Get bip39 mnemonic
@@ -114,19 +116,31 @@ func InitCmd(mbm module.BasicManager, defaultNodeHome string) *cobra.Command {
 
 			genFile := config.GenesisFile()
 			overwrite, _ := cmd.Flags().GetBool(FlagOverwrite)
-			defaultDenom, _ := cmd.Flags().GetString(FlagDefaultBondDenom)
+			stakingBondDenom, _ := cmd.Flags().GetString(FlagStakingBondDenom)
 
-			// use os.Stat to check if the file exists
-			_, err = os.Stat(genFile)
-			if !overwrite && !os.IsNotExist(err) {
+			if !overwrite && tmos.FileExists(genFile) {
 				return fmt.Errorf("genesis.json file already exists: %v", genFile)
 			}
 
-			// Overwrites the SDK default denom for side-effects
-			if defaultDenom != "" {
-				sdk.DefaultBondDenom = defaultDenom
-			}
 			appGenState := mbm.DefaultGenesis(cdc)
+
+			if stakingBondDenom != "" {
+				var stakingGenesis stakingtypes.GenesisState
+
+				stakingRaw := appGenState[stakingtypes.ModuleName]
+				err := clientCtx.Codec.UnmarshalJSON(stakingRaw, &stakingGenesis)
+				if err != nil {
+					return err
+				}
+
+				stakingGenesis.Params.BondDenom = stakingBondDenom
+				modifiedStakingStr, err := clientCtx.Codec.MarshalJSON(&stakingGenesis)
+				if err != nil {
+					return err
+				}
+
+				appGenState[stakingtypes.ModuleName] = modifiedStakingStr
+			}
 
 			appState, err := json.MarshalIndent(appGenState, "", " ")
 			if err != nil {
@@ -164,7 +178,7 @@ func InitCmd(mbm module.BasicManager, defaultNodeHome string) *cobra.Command {
 	cmd.Flags().BoolP(FlagOverwrite, "o", false, "overwrite the genesis.json file")
 	cmd.Flags().Bool(FlagRecover, false, "provide seed phrase to recover existing key instead of creating")
 	cmd.Flags().String(flags.FlagChainID, "", "genesis file chain-id, if left blank will be randomly created")
-	cmd.Flags().String(FlagDefaultBondDenom, "", "genesis file default denomination, if left blank default value is 'stake'")
+	cmd.Flags().String(FlagStakingBondDenom, "", "genesis file staking bond denomination, if left blank default value is 'stake'")
 
 	return cmd
 }

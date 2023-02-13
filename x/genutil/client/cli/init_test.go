@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	abci_server "github.com/cometbft/cometbft/abci/server"
-	"github.com/cometbft/cometbft/libs/cli"
-	"github.com/cometbft/cometbft/libs/log"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
+	abci_server "github.com/tendermint/tendermint/abci/server"
+	"github.com/tendermint/tendermint/libs/cli"
+	"github.com/tendermint/tendermint/libs/log"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -22,7 +22,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/server"
 	"github.com/cosmos/cosmos-sdk/server/mock"
 	"github.com/cosmos/cosmos-sdk/testutil"
-	"github.com/cosmos/cosmos-sdk/testutil/network"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	"github.com/cosmos/cosmos-sdk/x/genutil"
@@ -121,7 +120,7 @@ func TestInitRecover(t *testing.T) {
 	require.NoError(t, cmd.ExecuteContext(ctx))
 }
 
-func TestInitDefaultBondDenom(t *testing.T) {
+func TestInitStakingBondDenom(t *testing.T) {
 	home := t.TempDir()
 	logger := log.NewNopLogger()
 	cfg, err := genutiltest.CreateDefaultTendermintConfig(home)
@@ -144,7 +143,7 @@ func TestInitDefaultBondDenom(t *testing.T) {
 	cmd.SetArgs([]string{
 		"appnode-test",
 		fmt.Sprintf("--%s=%s", cli.HomeFlag, home),
-		fmt.Sprintf("--%s=testtoken", genutilcli.FlagDefaultBondDenom),
+		fmt.Sprintf("--%s=testtoken", genutilcli.FlagStakingBondDenom),
 	})
 	require.NoError(t, cmd.ExecuteContext(ctx))
 }
@@ -209,9 +208,8 @@ func TestStartStandAlone(t *testing.T) {
 	app, err := mock.NewApp(home, logger)
 	require.NoError(t, err)
 
-	svrAddr, _, closeFn, err := network.FreeTCPAddr()
+	svrAddr, _, err := server.FreeTCPAddr()
 	require.NoError(t, err)
-	require.NoError(t, closeFn())
 
 	svr, err := abci_server.NewServer(svrAddr, "socket", app)
 	require.NoError(t, err, "error creating listener")

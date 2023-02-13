@@ -8,15 +8,14 @@ import (
 	"github.com/cosmos/cosmos-sdk/client"
 )
 
-func DefaultConfig() *ClientConfig {
-	return &ClientConfig{
-		ChainID:        "",
-		KeyringBackend: "os",
-		Output:         "text",
-		Node:           "tcp://localhost:26657",
-		BroadcastMode:  "sync",
-	}
-}
+// Default constants
+const (
+	chainID        = ""
+	keyringBackend = "os"
+	output         = "text"
+	node           = "tcp://localhost:26657"
+	broadcastMode  = "sync"
+)
 
 type ClientConfig struct {
 	ChainID        string `mapstructure:"chain-id" json:"chain-id"`
@@ -24,6 +23,11 @@ type ClientConfig struct {
 	Output         string `mapstructure:"output" json:"output"`
 	Node           string `mapstructure:"node" json:"node"`
 	BroadcastMode  string `mapstructure:"broadcast-mode" json:"broadcast-mode"`
+}
+
+// defaultClientConfig returns the reference to ClientConfig with default values.
+func defaultClientConfig() *ClientConfig {
+	return &ClientConfig{chainID, keyringBackend, output, node, broadcastMode}
 }
 
 func (c *ClientConfig) SetChainID(chainID string) {
@@ -50,11 +54,11 @@ func (c *ClientConfig) SetBroadcastMode(broadcastMode string) {
 func ReadFromClientConfig(ctx client.Context) (client.Context, error) {
 	configPath := filepath.Join(ctx.HomeDir, "config")
 	configFilePath := filepath.Join(configPath, "client.toml")
-	conf := DefaultConfig()
+	conf := defaultClientConfig()
 
-	// when config.toml does not exist create and init with default values
+	// if config.toml file does not exist we create it and write default ClientConfig values into it.
 	if _, err := os.Stat(configFilePath); os.IsNotExist(err) {
-		if err := os.MkdirAll(configPath, os.ModePerm); err != nil {
+		if err := ensureConfigPath(configPath); err != nil {
 			return ctx, fmt.Errorf("couldn't make client config: %v", err)
 		}
 
