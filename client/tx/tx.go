@@ -6,10 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-
 	gogogrpc "github.com/gogo/protobuf/grpc"
 	"github.com/spf13/pflag"
+	"os"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/input"

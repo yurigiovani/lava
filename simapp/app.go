@@ -96,6 +96,10 @@ import (
 	upgradekeeper "github.com/cosmos/cosmos-sdk/x/upgrade/keeper"
 	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 
+	"github.com/cosmos/cosmos-sdk/x/lottery"
+	lotterykeeper "github.com/cosmos/cosmos-sdk/x/lottery/keeper"
+	lotterytypes "github.com/cosmos/cosmos-sdk/x/lottery/types"
+
 	// unnamed import of statik for swagger UI support
 	_ "github.com/cosmos/cosmos-sdk/client/docs/statik"
 )
@@ -130,6 +134,9 @@ var (
 		groupmodule.AppModuleBasic{},
 		vesting.AppModuleBasic{},
 		nftmodule.AppModuleBasic{},
+
+		// Lottery Module Basic
+		lottery.AppModuleBasic{},
 	)
 
 	// module account permissions
@@ -183,6 +190,9 @@ type SimApp struct {
 	GroupKeeper      groupkeeper.Keeper
 	NFTKeeper        nftkeeper.Keeper
 
+	// LotteryKeeper
+	LotteryKeeper lotterykeeper.Keeper
+
 	// the module manager
 	mm *module.Manager
 
@@ -222,7 +232,7 @@ func NewSimApp(
 		minttypes.StoreKey, distrtypes.StoreKey, slashingtypes.StoreKey,
 		govtypes.StoreKey, paramstypes.StoreKey, upgradetypes.StoreKey, feegrant.StoreKey,
 		evidencetypes.StoreKey, capabilitytypes.StoreKey,
-		authzkeeper.StoreKey, nftkeeper.StoreKey, group.StoreKey,
+		authzkeeper.StoreKey, nftkeeper.StoreKey, group.StoreKey, lotterytypes.StoreKey,
 	)
 	tkeys := sdk.NewTransientStoreKeys(paramstypes.TStoreKey)
 	// NOTE: The testingkey is just mounted for testing purposes. Actual applications should
@@ -322,7 +332,7 @@ func NewSimApp(
 
 	app.GovKeeper = *govKeeper.SetHooks(
 		govtypes.NewMultiGovHooks(
-		// register the governance hooks
+			// register the governance hooks
 		),
 	)
 
@@ -334,6 +344,9 @@ func NewSimApp(
 	)
 	// If evidence needs to be handled for the app, set routes in router here and seal
 	app.EvidenceKeeper = *evidenceKeeper
+
+	// Lottery Keeper
+	app.LotteryKeeper = lotterykeeper.NewKeeper(app.appCodec, keys[evidencetypes.StoreKey], app.AccountKeeper, app.BankKeeper)
 
 	/****  Module Options ****/
 
@@ -365,6 +378,8 @@ func NewSimApp(
 		authzmodule.NewAppModule(appCodec, app.AuthzKeeper, app.AccountKeeper, app.BankKeeper, app.interfaceRegistry),
 		groupmodule.NewAppModule(appCodec, app.GroupKeeper, app.AccountKeeper, app.BankKeeper, app.interfaceRegistry),
 		nftmodule.NewAppModule(appCodec, app.NFTKeeper, app.AccountKeeper, app.BankKeeper, app.interfaceRegistry),
+		// Lottery Module
+		lottery.NewAppModule(appCodec, app.LotteryKeeper),
 	)
 
 	// During begin block slashing happens after distr.BeginBlocker so that
@@ -377,7 +392,7 @@ func NewSimApp(
 		evidencetypes.ModuleName, stakingtypes.ModuleName,
 		authtypes.ModuleName, banktypes.ModuleName, govtypes.ModuleName, crisistypes.ModuleName, genutiltypes.ModuleName,
 		authz.ModuleName, feegrant.ModuleName, nft.ModuleName, group.ModuleName,
-		paramstypes.ModuleName, vestingtypes.ModuleName,
+		paramstypes.ModuleName, vestingtypes.ModuleName, lotterytypes.ModuleName,
 	)
 	app.mm.SetOrderEndBlockers(
 		crisistypes.ModuleName, govtypes.ModuleName, stakingtypes.ModuleName,
@@ -385,7 +400,7 @@ func NewSimApp(
 		slashingtypes.ModuleName, minttypes.ModuleName,
 		genutiltypes.ModuleName, evidencetypes.ModuleName, authz.ModuleName,
 		feegrant.ModuleName, nft.ModuleName, group.ModuleName,
-		paramstypes.ModuleName, upgradetypes.ModuleName, vestingtypes.ModuleName,
+		paramstypes.ModuleName, upgradetypes.ModuleName, vestingtypes.ModuleName, lotterytypes.ModuleName,
 	)
 
 	// NOTE: The genutils module must occur after staking so that pools are
@@ -399,7 +414,7 @@ func NewSimApp(
 		slashingtypes.ModuleName, govtypes.ModuleName, minttypes.ModuleName, crisistypes.ModuleName,
 		genutiltypes.ModuleName, evidencetypes.ModuleName, authz.ModuleName,
 		feegrant.ModuleName, nft.ModuleName, group.ModuleName,
-		paramstypes.ModuleName, upgradetypes.ModuleName, vestingtypes.ModuleName,
+		paramstypes.ModuleName, upgradetypes.ModuleName, vestingtypes.ModuleName, lotterytypes.ModuleName,
 	)
 
 	// Uncomment if you want to set a custom migration order here.

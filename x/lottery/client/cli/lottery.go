@@ -45,6 +45,7 @@ func NewEnterLotteryCmd() *cobra.Command {
 
 			txf := tx.NewFactoryCLI(clientCtx, cmd.Flags()).
 				WithTxConfig(clientCtx.TxConfig).WithAccountRetriever(clientCtx.AccountRetriever)
+
 			txf, msg, err := newBuildCreateValidatorMsg(clientCtx, txf, cmd.Flags())
 
 			if err != nil {
@@ -56,10 +57,6 @@ func NewEnterLotteryCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-
-			//txRaw := []byte(txResponse.RawLog)
-			//
-			//return clientCtx.PrintRaw(txRaw)
 
 			return nil
 		},
@@ -99,12 +96,13 @@ func newBuildCreateValidatorMsg(clientCtx client.Context, txf tx.Factory, fs *fl
 	}
 
 	valAddr := clientCtx.GetFromAddress()
+
 	//pkStr, err := fs.GetString(cli.FlagPubKey)
 	//if err != nil {
 	//	return txf, nil, err
 	//}
 
-	pkStr := "{\"@type\":\"/cosmos.crypto.ed25519.PubKey\",\"key\":\"Ixou4RickafrCPy0xhRzOPyfdZjVQ0VA77bT4MTY+AQ=\"}"
+	pkStr := "{\"@type\":\"/cosmos.crypto.ed25519.PubKey\",\"key\":\"E2Q//ZPEwt092mrYNZkY3UpN8Ioi1P0BKhhm3gFmmHg=\"}"
 
 	var pk cryptotypes.PubKey
 	if err := clientCtx.Codec.UnmarshalInterfaceJSON([]byte(pkStr), &pk); err != nil {
@@ -125,7 +123,7 @@ func newBuildCreateValidatorMsg(clientCtx client.Context, txf tx.Factory, fs *fl
 	//)
 
 	msg := types.NewMsgEnterLottery(
-		valAddr, amount, amount.Denom,
+		valAddr, amount.Amount.Int64(), amount.Denom,
 	)
 
 	if err != nil {

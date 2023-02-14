@@ -19,8 +19,8 @@ func NewKeeper(
 	key storetypes.StoreKey,
 	ak types.AccountKeeper,
 	bk types.BankKeeper,
-) *Keeper {
-	return &Keeper{
+) Keeper {
+	return Keeper{
 		storeKey:   key,
 		cdc:        cdc,
 		authKeeper: ak,

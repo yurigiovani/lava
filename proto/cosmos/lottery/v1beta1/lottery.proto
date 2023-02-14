@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package cosmos.lottery.v1beta1;
+
+option go_package = "github.com/cosmos/cosmos-sdk/x/lottery/types";
+
+// Msg defines the lottery Msg service.
+service Msg {
+  // CreateValidator defines a method for creating a new validator.
+  rpc EnterLottery(MsgEnterLottery) returns (MsgEnterLotteryResponse);
+}
+
+// MsgEnterLottery defines a SDK message for enter on the lottery.
+message MsgEnterLottery {
+  bytes user = 1;
+  int64 amount = 2;
+  string token_denom = 3;
+}
+
+// MsgEnterLotteryResponse defines the Msg/EnterLottery response type.
+message MsgEnterLotteryResponse {}
