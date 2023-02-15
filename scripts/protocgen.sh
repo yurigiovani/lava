@@ -33,10 +33,10 @@ done
 cd ..
 
 # generate codec/testdata proto code
-(cd testutil/testdata; buf generate)
+#(cd testutil/testdata; buf generate)
 
 # move proto files to the right places
-cp -r github.com/cosmos/cosmos-sdk/* ./
-rm -rf github.com
+#cp -r github.com/cosmos/cosmos-sdk/* ./
+#rm -rf github.com
 
 go mod tidy -compat=1.18

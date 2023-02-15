@@ -7,7 +7,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	authclient "github.com/cosmos/cosmos-sdk/x/auth/client"
 	"github.com/cosmos/cosmos-sdk/x/lottery/types"
 	"github.com/spf13/cobra"
 	flag "github.com/spf13/pflag"
@@ -64,28 +63,17 @@ func NewEnterLotteryCmd() *cobra.Command {
 
 	cmd.Flags().String(FlagAmount, "", "The amount that will send to lottery")
 	cmd.Flags().String(FlagFrom, "", "The address that will enter on lottery")
+	cmd.Flags().String(FlagPubKey, "", "The pubkey from address")
 
 	_ = cmd.MarkFlagRequired(FlagAmount)
 	_ = cmd.MarkFlagRequired(FlagFrom)
+	_ = cmd.MarkFlagRequired(FlagPubKey)
 
 	return cmd
 }
 
 func sendEnterLottery(clientCtx client.Context, txFactory tx.Factory, msg *types.MsgEnterLottery) error {
 	return tx.GenerateOrBroadcastTxWithFactory(clientCtx, txFactory, msg)
-}
-
-func sign(clientCtx client.Context, txBuilder client.TxBuilder, txFactory tx.Factory, from string) error {
-	_, fromName, _, err := client.GetFromFields(clientCtx, txFactory.Keybase(), from)
-	if err != nil {
-		return fmt.Errorf("error getting account from keybase: %w", err)
-	}
-
-	if err = authclient.SignTx(txFactory, clientCtx, fromName, txBuilder, false, false); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func newBuildCreateValidatorMsg(clientCtx client.Context, txf tx.Factory, fs *flag.FlagSet) (tx.Factory, *types.MsgEnterLottery, error) {
@@ -97,30 +85,21 @@ func newBuildCreateValidatorMsg(clientCtx client.Context, txf tx.Factory, fs *fl
 
 	valAddr := clientCtx.GetFromAddress()
 
-	//pkStr, err := fs.GetString(cli.FlagPubKey)
-	//if err != nil {
-	//	return txf, nil, err
-	//}
+	if err != nil {
+		fmt.Println("error while GetAccount", err)
+		return txf, nil, err
+	}
 
-	pkStr := "{\"@type\":\"/cosmos.crypto.ed25519.PubKey\",\"key\":\"E2Q//ZPEwt092mrYNZkY3UpN8Ioi1P0BKhhm3gFmmHg=\"}"
+	pkStr, err := fs.GetString(FlagPubKey)
+
+	if err != nil {
+		return txf, nil, err
+	}
 
 	var pk cryptotypes.PubKey
 	if err := clientCtx.Codec.UnmarshalInterfaceJSON([]byte(pkStr), &pk); err != nil {
 		return txf, nil, err
 	}
-
-	//moniker, _ := fs.GetString(FlagMoniker)
-	//identity, _ := fs.GetString(FlagIdentity)
-	//website, _ := fs.GetString(FlagWebsite)
-	//security, _ := fs.GetString(FlagSecurityContact)
-	//details, _ := fs.GetString(FlagDetails)
-	//description := types.NewDescription(
-	//	moniker,
-	//	identity,
-	//	website,
-	//	security,
-	//	details,
-	//)
 
 	msg := types.NewMsgEnterLottery(
 		valAddr, amount.Amount.Int64(), amount.Denom,

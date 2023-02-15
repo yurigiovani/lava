@@ -6,6 +6,7 @@ const (
 	FlagAddress = "address"
 	FlagAmount  = "amount"
 	FlagFrom    = "from"
+	FlagPubKey  = "pubkey"
 )
 
 // FlagSetAddress Returns the flagset for External Address related operations.

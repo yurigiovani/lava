@@ -36,5 +36,3 @@ func (msg MsgEnterLottery) ValidateBasic() error {
 func (msg MsgEnterLottery) GetSigners() []sdk.AccAddress {
 	return []sdk.AccAddress{msg.User}
 }
-
-func (msg MsgEnterLottery) XXX_MessageName() string { return "cosmos.lottery.v1beta1.MsgEnterLottery" }
