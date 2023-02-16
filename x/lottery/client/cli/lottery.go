@@ -102,7 +102,7 @@ func newBuildCreateValidatorMsg(clientCtx client.Context, txf tx.Factory, fs *fl
 	}
 
 	msg := types.NewMsgEnterLottery(
-		valAddr, amount.Amount.Int64(), amount.Denom,
+		valAddr.String(), amount,
 	)
 
 	if err != nil {

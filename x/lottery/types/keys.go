@@ -12,4 +12,6 @@ const (
 
 	// RouterKey is the msg router key for the lottery module
 	RouterKey = ModuleName
+
+	AttributeValueCategory = ModuleName
 )
