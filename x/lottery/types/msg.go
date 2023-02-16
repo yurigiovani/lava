@@ -1,14 +1,17 @@
 package types
 
 import (
+	"cosmossdk.io/math"
+	"fmt"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 )
 
-func NewMsgEnterLottery(address string, coin sdk.Coin) MsgEnterLottery {
+func NewMsgEnterLottery(address string, bet sdk.Coin, fee sdk.Coin) MsgEnterLottery {
 	return MsgEnterLottery{
 		Address: address,
-		Amount:  coin,
+		Bet:     bet,
+		Fee:     fee,
 	}
 }
 
@@ -17,12 +20,14 @@ func (msg MsgEnterLottery) ValidateBasic() error {
 		return sdkerrors.ErrInvalidAddress.Wrapf("invalid from address: %s", err)
 	}
 
-	if !msg.Amount.IsValid() {
-		return sdkerrors.Wrap(sdkerrors.ErrInvalidCoins, "invalid amount")
+	if !msg.Bet.IsValid() {
+		return sdkerrors.Wrap(sdkerrors.ErrInvalidCoins, "invalid bet")
 	}
 
-	if msg.Amount.IsZero() {
-		return sdkerrors.Wrap(sdkerrors.ErrInvalidCoins, "amount cannot be zero")
+	minBet := sdk.NewCoin("stake", math.NewInt(GetMinBetLottery()))
+
+	if msg.Bet.IsGTE(minBet) {
+		return sdkerrors.Wrap(sdkerrors.ErrInvalidCoins, fmt.Sprintf("bet must be greater than %d", GetMinBetLottery()))
 	}
 
 	return nil

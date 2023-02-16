@@ -4,7 +4,7 @@ import flag "github.com/spf13/pflag"
 
 const (
 	FlagAddress = "address"
-	FlagAmount  = "amount"
+	FlagBet     = "bet"
 	FlagFrom    = "from"
 	FlagPubKey  = "pubkey"
 )

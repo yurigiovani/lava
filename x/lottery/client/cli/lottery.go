@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cosmossdk.io/math"
 	"fmt"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
@@ -61,11 +62,11 @@ func NewEnterLotteryCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().String(FlagAmount, "", "The amount that will send to lottery")
+	cmd.Flags().String(FlagBet, "", "The bet that will send to lottery (min 1stake)")
 	cmd.Flags().String(FlagFrom, "", "The address that will enter on lottery")
 	cmd.Flags().String(FlagPubKey, "", "The pubkey from address")
 
-	_ = cmd.MarkFlagRequired(FlagAmount)
+	_ = cmd.MarkFlagRequired(FlagBet)
 	_ = cmd.MarkFlagRequired(FlagFrom)
 	_ = cmd.MarkFlagRequired(FlagPubKey)
 
@@ -77,8 +78,9 @@ func sendEnterLottery(clientCtx client.Context, txFactory tx.Factory, msg *types
 }
 
 func newBuildCreateValidatorMsg(clientCtx client.Context, txf tx.Factory, fs *flag.FlagSet) (tx.Factory, *types.MsgEnterLottery, error) {
-	fAmount, _ := fs.GetString(FlagAmount)
-	amount, err := sdk.ParseCoinNormalized(fAmount)
+	fBet, _ := fs.GetString(FlagBet)
+	bet, err := sdk.ParseCoinNormalized(fBet)
+
 	if err != nil {
 		return txf, nil, err
 	}
@@ -101,8 +103,10 @@ func newBuildCreateValidatorMsg(clientCtx client.Context, txf tx.Factory, fs *fl
 		return txf, nil, err
 	}
 
+	lotteryFee := sdk.NewCoin("stake", math.NewInt(types.LotteryFee))
+
 	msg := types.NewMsgEnterLottery(
-		valAddr.String(), amount,
+		valAddr.String(), bet, lotteryFee,
 	)
 
 	if err != nil {

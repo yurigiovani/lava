@@ -1,10 +1,10 @@
 package keeper
 
 import (
-	"context"
 	"fmt"
 	"github.com/cosmos/cosmos-sdk/codec"
 	storetypes "github.com/cosmos/cosmos-sdk/store/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/lottery/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
@@ -31,8 +31,21 @@ func NewKeeper(
 	}
 }
 
-func (k Keeper) EnterLottery(ctx context.Context, msg *types.MsgEnterLottery) error {
-	fmt.Println(msg.String())
+func (k Keeper) EnterLottery(ctx sdk.Context, msg *types.MsgEnterLottery) error {
+	ctx.Logger().Info("entering on lottery", msg)
+
+	//lotteryAccount := k.authKeeper.GetModuleAccount(ctx, types.ModuleName)
+	lotteryStore := ctx.KVStore(k.storeKey)
+
+	k.setLottery(lotteryStore, 1, msg)
 
 	return nil
+}
+
+func (k Keeper) setLottery(store sdk.KVStore, id int64, msg *types.MsgEnterLottery) {
+	fmt.Println(store.Has(types.GetLotteryEntriesKey(id)))
+
+	if store.Has(types.GetLotteryEntriesKey(id)) == true {
+		fmt.Println("already in lottery")
+	}
 }

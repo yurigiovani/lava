@@ -30,11 +30,11 @@ func (k msgServer) EnterLottery(goCtx context.Context, msg *types.MsgEnterLotter
 	}
 
 	defer func() {
-		if msg.Amount.Amount.IsInt64() {
+		if msg.Bet.Amount.IsInt64() {
 			telemetry.SetGaugeWithLabels(
 				[]string{"tx", "msg", "send"},
-				float32(msg.Amount.Amount.Int64()),
-				[]metrics.Label{telemetry.NewLabel("denom", msg.Amount.Denom)},
+				float32(msg.Bet.Amount.Int64()),
+				[]metrics.Label{telemetry.NewLabel("denom", msg.Bet.Denom)},
 			)
 		}
 	}()

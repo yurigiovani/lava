@@ -16,7 +16,8 @@ service Msg {
 // MsgEnterLottery defines a SDK message for enter on the lottery.
 message MsgEnterLottery {
   string   address                    = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
-  cosmos.base.v1beta1.Coin amount = 2;
+  cosmos.base.v1beta1.Coin bet = 2 [(gogoproto.nullable) = false];
+  cosmos.base.v1beta1.Coin fee = 3 [(gogoproto.nullable) = false];
 }
 
 // MsgEnterLotteryResponse defines the Msg/EnterLottery response type.
