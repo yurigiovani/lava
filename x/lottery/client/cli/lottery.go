@@ -86,13 +86,9 @@ func newBuildCreateValidatorMsg(clientCtx client.Context, txf tx.Factory, fs *fl
 	}
 
 	valAddr := clientCtx.GetFromAddress()
-
-	if err != nil {
-		fmt.Println("error while GetAccount", err)
-		return txf, nil, err
-	}
-
 	pkStr, err := fs.GetString(FlagPubKey)
+
+	fmt.Println(valAddr)
 
 	if err != nil {
 		return txf, nil, err
