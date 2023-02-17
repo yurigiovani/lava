@@ -18,16 +18,6 @@ func NewMsgEnterLottery(address string, bet sdk.Coin, fee sdk.Coin) MsgEnterLott
 	}
 }
 
-func (msg MsgEnterLottery) GetAccAddress() (sdk.AccAddress, error) {
-	acc, err := sdk.AccAddressFromBech32(msg.Address)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return acc, nil
-}
-
 func (msg MsgEnterLottery) ValidateBasic() error {
 	if _, err := sdk.AccAddressFromBech32(msg.Address); err != nil {
 		return sdkerrors.ErrInvalidAddress.Wrapf("invalid from address: %s", err)

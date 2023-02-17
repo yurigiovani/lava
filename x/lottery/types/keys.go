@@ -27,13 +27,13 @@ func GetMinBetLottery() int64 {
 	return LotteryFee + MinBet
 }
 
-// Keys for distribution store
+// Keys for lottery store
 var (
 	KeyLotteryCounter = []byte{0x01}
 	KeyLotteryEntries = []byte{0x02}
 )
 
-// GetLotteryEntriesKey
+// GetLotteryEntriesKey get the KeyLotteryEntries concat with desired id from lottery
 func GetLotteryEntriesKey(id int64) []byte {
 	return append(KeyLotteryEntries, byte(id))
 }

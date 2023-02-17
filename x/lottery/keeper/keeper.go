@@ -19,18 +19,14 @@ type Keeper struct {
 	bankKeeper stakingtypes.BankKeeper
 }
 
-// NewKeeper creates a new staking Keeper instance
+// NewKeeper creates a new lottery Keeper instance
 func NewKeeper(
 	cdc codec.BinaryCodec,
 	key storetypes.StoreKey,
-	ak stakingtypes.AccountKeeper,
-	bk stakingtypes.BankKeeper,
 ) Keeper {
 	return Keeper{
-		storeKey:   key,
-		cdc:        cdc,
-		authKeeper: ak,
-		bankKeeper: bk,
+		storeKey: key,
+		cdc:      cdc,
 	}
 }
 
@@ -39,11 +35,12 @@ func (k Keeper) Logger(ctx sdk.Context) log.Logger {
 	return ctx.Logger().With("module", "x/"+types.ModuleName)
 }
 
-// lotteryStore returns a lottery store.
+// store returns a lottery store.
 func (k Keeper) store(ctx sdk.Context) sdk.KVStore {
 	return ctx.KVStore(k.storeKey)
 }
 
+// EnterLottery receive types.MsgEnterLottery and set a new entry for current lottery
 func (k Keeper) EnterLottery(ctx sdk.Context, msg *types.MsgEnterLottery) error {
 	ctx.Logger().With("address", msg.Address).Info("started to enter on lottery", msg)
 	defer ctx.Logger().Info("finished to enter on lottery", msg)
@@ -69,7 +66,6 @@ func (k Keeper) setLottery(ctx sdk.Context, id int64, msg *types.MsgEnterLottery
 	}
 
 	entries = append(entries, msg)
-
 	bentries, err := amino.MarshalBinaryLengthPrefixed(entries)
 
 	if err != nil {
@@ -84,10 +80,8 @@ func (k Keeper) getLottery(ctx sdk.Context, id int64) (types.MsgEnterLotteryList
 	lotteryStore := k.store(ctx)
 
 	if err := amino.UnmarshalBinaryLengthPrefixed(lotteryStore.Get(types.GetLotteryEntriesKey(id)), &entries); err != nil {
-		if err != nil {
-			k.Logger(ctx).Error(fmt.Sprintf("error to get lottery: %s", err))
-			return nil, err
-		}
+		k.Logger(ctx).Error(fmt.Sprintf("error to get lottery: %s", err))
+		return nil, err
 	}
 
 	return entries, nil
@@ -110,9 +104,11 @@ func (k Keeper) hasEntryLottery(ctx sdk.Context, id int64, address string) bool 
 	}
 
 	for _, msg := range msgs {
-		if msg.Address == address {
-			return true
+		if msg.Address != address {
+			continue
 		}
+
+		return true
 	}
 
 	return false

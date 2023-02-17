@@ -2,7 +2,6 @@ package cli
 
 import (
 	"cosmossdk.io/math"
-	"fmt"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/client/tx"
@@ -43,16 +42,7 @@ func NewEnterLotteryCmd() *cobra.Command {
 				return err
 			}
 
-			txf := tx.NewFactoryCLI(clientCtx, cmd.Flags()).
-				WithTxConfig(clientCtx.TxConfig).WithAccountRetriever(clientCtx.AccountRetriever)
-
-			txf, msg, err := newBuildCreateValidatorMsg(clientCtx, txf, cmd.Flags())
-
-			if err != nil {
-				return err
-			}
-
-			err = sendEnterLottery(clientCtx, txf, msg)
+			err = sendEnterLottery(clientCtx, cmd)
 
 			if err != nil {
 				return err
@@ -73,10 +63,21 @@ func NewEnterLotteryCmd() *cobra.Command {
 	return cmd
 }
 
-func sendEnterLottery(clientCtx client.Context, txFactory tx.Factory, msg *types.MsgEnterLottery) error {
-	return tx.GenerateOrBroadcastTxWithFactory(clientCtx, txFactory, msg)
+// senEnterLottery is to build the message and send the broadcast the transaction
+func sendEnterLottery(clientCtx client.Context, cmd *cobra.Command) error {
+	txf := tx.NewFactoryCLI(clientCtx, cmd.Flags()).
+		WithTxConfig(clientCtx.TxConfig).WithAccountRetriever(clientCtx.AccountRetriever)
+
+	txf, msg, err := newBuildCreateValidatorMsg(clientCtx, txf, cmd.Flags())
+
+	if err != nil {
+		return err
+	}
+
+	return tx.GenerateOrBroadcastTxWithFactory(clientCtx, txf, msg)
 }
 
+// newBuildCreateValidatorMsg to build the message types.MsgEnterLottery
 func newBuildCreateValidatorMsg(clientCtx client.Context, txf tx.Factory, fs *flag.FlagSet) (tx.Factory, *types.MsgEnterLottery, error) {
 	fBet, _ := fs.GetString(FlagBet)
 	bet, err := sdk.ParseCoinNormalized(fBet)
@@ -87,8 +88,6 @@ func newBuildCreateValidatorMsg(clientCtx client.Context, txf tx.Factory, fs *fl
 
 	valAddr := clientCtx.GetFromAddress()
 	pkStr, err := fs.GetString(FlagPubKey)
-
-	fmt.Println(valAddr)
 
 	if err != nil {
 		return txf, nil, err
@@ -108,6 +107,7 @@ func newBuildCreateValidatorMsg(clientCtx client.Context, txf tx.Factory, fs *fl
 	if err != nil {
 		return txf, nil, err
 	}
+
 	if err := msg.ValidateBasic(); err != nil {
 		return txf, nil, err
 	}

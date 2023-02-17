@@ -2,11 +2,10 @@ package keeper
 
 import (
 	"context"
+	"github.com/armon/go-metrics"
+	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/cosmos/cosmos-sdk/x/lottery/types"
 
-	"github.com/armon/go-metrics"
-
-	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -22,12 +21,9 @@ func NewMsgServerImpl(keeper Keeper) types.MsgServer {
 
 var _ types.MsgServer = msgServer{}
 
+//EnterLottery will receive a broadcasted types.MsgEnterLottery and execute the process
 func (k msgServer) EnterLottery(goCtx context.Context, msg *types.MsgEnterLottery) (*types.MsgEnterLotteryResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-
-	if err := k.Keeper.EnterLottery(ctx, msg); err != nil {
-		return nil, err
-	}
 
 	defer func() {
 		if msg.Bet.Amount.IsInt64() {
@@ -38,6 +34,10 @@ func (k msgServer) EnterLottery(goCtx context.Context, msg *types.MsgEnterLotter
 			)
 		}
 	}()
+
+	if err := k.Keeper.EnterLottery(ctx, msg); err != nil {
+		return nil, err
+	}
 
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
