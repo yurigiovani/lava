@@ -20,6 +20,9 @@ const (
 
 	// MinBet is the minimal value for enter on Lottery
 	MinBet = 1
+
+	// MinCounter
+	MinCounter = 10
 )
 
 // GetMinBetLottery is the function that will return the min bet to enter on Lottery
@@ -29,8 +32,9 @@ func GetMinBetLottery() int64 {
 
 // Keys for lottery store
 var (
-	KeyLotteryCounter = []byte{0x01}
-	KeyLotteryEntries = []byte{0x02}
+	KeyLotteryCounter    = []byte{0x01}
+	KeyLotteryEntries    = []byte{0x02}
+	KeyLotteryCurrentyID = []byte{0x03}
 )
 
 // GetLotteryEntriesKey get the KeyLotteryEntries concat with desired id from lottery

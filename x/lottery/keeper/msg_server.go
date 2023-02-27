@@ -2,11 +2,11 @@ package keeper
 
 import (
 	"context"
+	"errors"
 	"github.com/armon/go-metrics"
 	"github.com/cosmos/cosmos-sdk/telemetry"
-	"github.com/cosmos/cosmos-sdk/x/lottery/types"
-
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/x/lottery/types"
 )
 
 type msgServer struct {
@@ -25,6 +25,8 @@ var _ types.MsgServer = msgServer{}
 func (k msgServer) EnterLottery(goCtx context.Context, msg *types.MsgEnterLottery) (*types.MsgEnterLotteryResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	k.Logger(ctx).Info("entering into a lottery")
+
 	defer func() {
 		if msg.Bet.Amount.IsInt64() {
 			telemetry.SetGaugeWithLabels(
@@ -34,6 +36,16 @@ func (k msgServer) EnterLottery(goCtx context.Context, msg *types.MsgEnterLotter
 			)
 		}
 	}()
+
+	propAccAddr := sdk.AccAddress(ctx.BlockHeader().ProposerAddress)
+	senderAddr, _ := sdk.AccAddressFromBech32(msg.Address)
+
+	// checking if proposer is trying to enter on lottery
+	if propAccAddr.Equals(senderAddr) {
+		err := errors.New("proposer could not be a sender")
+		k.Logger(ctx).Error(err.Error())
+		return nil, err
+	}
 
 	if err := k.Keeper.EnterLottery(ctx, msg); err != nil {
 		return nil, err

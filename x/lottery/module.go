@@ -2,6 +2,7 @@ package lottery
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/cosmos/cosmos-sdk/x/lottery/client/cli"
 	"github.com/cosmos/cosmos-sdk/x/lottery/keeper"
 	"github.com/cosmos/cosmos-sdk/x/lottery/types"
@@ -139,7 +140,20 @@ func (am AppModule) BeginBlock(ctx sdk.Context, _ abci.RequestBeginBlock) {
 // EndBlock returns the end blocker for the staking module. It returns no validator
 // updates.
 func (am AppModule) EndBlock(ctx sdk.Context, _ abci.RequestEndBlock) []abci.ValidatorUpdate {
-	// rules to validate each block and check if lottery will end, choose winner and delivery the reward
+	counter := am.keeper.GetCounter(ctx)
+
+	if counter < types.MinCounter {
+		return []abci.ValidatorUpdate{}
+	}
+
+	fmt.Println("Drawlottery")
+
+	_, err := am.keeper.DrawLottery(ctx)
+
+	if err != nil {
+		panic(err)
+	}
+
 	return []abci.ValidatorUpdate{}
 }
 
