@@ -18,6 +18,9 @@ const (
 	// LotteryFee is the fee that will be charged to user
 	LotteryFee = 5
 
+	// MaxBet is the minimum value for enter on Lottery
+	MaxBet = 100
+
 	// MinBet is the minimum value for enter on Lottery
 	MinBet = 1
 

@@ -52,6 +52,28 @@ func (k Keeper) getCurrentLottery(ctx sdk.Context) (types.MsgEnterLotteryList, e
 	return entries, nil
 }
 
+// hasBalance method to check if address has enough balance
+func (k Keeper) hasBalance(ctx sdk.Context, msg *types.MsgEnterLottery) (bool, error) {
+	addr, err := sdk.AccAddressFromBech32(msg.Address)
+
+	if err != nil {
+		return false, err
+	}
+
+	balances := k.bankKeeper.GetAllBalances(ctx, addr)
+
+	for _, row := range balances {
+		if row.Denom != msg.Bet.Denom {
+			continue
+		}
+
+		total := msg.Bet.Amount.Add(msg.Fee.Amount)
+		return row.Amount.GTE(total), nil
+	}
+
+	return false, nil
+}
+
 func (k Keeper) hasEntryLottery(ctx sdk.Context, address string) bool {
 	var currentID = k.getCurrentLotteryID(ctx)
 	var msgs types.MsgEnterLotteryList
@@ -80,9 +102,18 @@ func (k Keeper) hasEntryLottery(ctx sdk.Context, address string) bool {
 	return false
 }
 
+func (k Keeper) resetCounter(ctx sdk.Context) {
+	k.store(ctx).Set(types.KeyLotteryCounter, []byte{0})
+}
+
 func (k Keeper) incrementCounter(ctx sdk.Context) {
 	counter := k.GetCounter(ctx)
 	k.store(ctx).Set(types.KeyLotteryCounter, []byte{byte(counter + 1)})
+}
+
+func (k Keeper) incrementLotteryID(ctx sdk.Context) {
+	id := k.getCurrentLotteryID(ctx)
+	k.store(ctx).Set(types.KeyLotteryCurrentyID, []byte{byte(id + 1)})
 }
 
 func (k Keeper) getCurrentLotteryID(ctx sdk.Context) int64 {

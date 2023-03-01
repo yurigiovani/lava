@@ -51,8 +51,28 @@ func (k Keeper) EnterLottery(ctx sdk.Context, msg *types.MsgEnterLottery) error 
 		return err
 	}
 
-	if err := k.addEntry(ctx, 1, msg); err != nil {
+	if hasBalance, err := k.hasBalance(ctx, msg); err != nil || !hasBalance {
+		if err == nil {
+			err = errors.New("could not get address from message")
+		}
+
+		k.Logger(ctx).Error(err.Error())
+
+		return err
+	}
+
+	if err := k.addEntry(ctx, k.getCurrentLotteryID(ctx), msg); err != nil {
 		k.Logger(ctx).Error(fmt.Sprintf("could not set lottery: %s", err))
+
+		return err
+	}
+
+	addr, _ := sdk.AccAddressFromBech32(msg.Address)
+	coin := sdk.NewCoin(msg.Bet.Denom, msg.Bet.Amount.Add(msg.Fee.Amount))
+	coinsToSend := sdk.NewCoins(coin)
+
+	if err := k.bankKeeper.SendCoinsFromAccountToModule(ctx, addr, types.ModuleName, coinsToSend); err != nil {
+		k.Logger(ctx).Error(fmt.Sprintf("could not send account to Lottery pool to account %s: %s", msg.Address, err))
 
 		return err
 	}
@@ -60,11 +80,6 @@ func (k Keeper) EnterLottery(ctx sdk.Context, msg *types.MsgEnterLottery) error 
 	k.incrementCounter(ctx)
 
 	return nil
-}
-
-func (k Keeper) GetLastLottery(ctx sdk.Context) types.MsgEnterLotteryList {
-	k.Logger(ctx).Info("getting last lottery")
-	return types.MsgEnterLotteryList{}
 }
 
 // GetCounter method to get counter state from current lottery
@@ -79,8 +94,10 @@ func (k Keeper) GetCounter(ctx sdk.Context) int64 {
 	return counter
 }
 
-func (k Keeper) ResetCounter(ctx sdk.Context) {
-	k.store(ctx).Set(types.KeyLotteryCounter, []byte{0})
+// CloseCurrentLottery method to close current lottery and start it again
+func (k Keeper) CloseCurrentLottery(ctx sdk.Context) {
+	k.incrementCounter(ctx)
+	k.incrementLotteryID(ctx)
 }
 
 // DrawLottery method to draw lottery and choose the winner of the lottery

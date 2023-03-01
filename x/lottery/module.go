@@ -153,7 +153,8 @@ func (am AppModule) EndBlock(ctx sdk.Context, _ abci.RequestEndBlock) []abci.Val
 		return []abci.ValidatorUpdate{}
 	}
 
-	am.keeper.ResetCounter(ctx)
+	am.keeper.CloseCurrentLottery(ctx)
+
 	am.keeper.Logger(ctx).Info("a new lottery's turn will start again")
 
 	return []abci.ValidatorUpdate{}
