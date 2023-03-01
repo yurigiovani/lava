@@ -66,9 +66,11 @@ func TestCalculatePayoutLowestBet(t *testing.T) {
 
 	balAddr0 := testutil.GetAccountBalance(bankKeeper.(bankkeeper.Keeper), ctx, addrs[0], "stake")
 	balAddr1 := testutil.GetAccountBalance(bankKeeper.(bankkeeper.Keeper), ctx, addrs[1], "stake")
+	balPool := testutil.GetModuleBalance(bankKeeper.(bankkeeper.Keeper), accountKeeper, ctx, types.ModuleName, "stake")
 
 	require.Equal(t, math.NewInt(39), balAddr0.Amount)
 	require.Equal(t, math.NewInt(34), balAddr1.Amount)
+	require.Equal(t, math.NewInt(27), balPool.Amount)
 }
 
 func TestCalculatePayoutLowestHighestBet(t *testing.T) {
@@ -102,9 +104,11 @@ func TestCalculatePayoutLowestHighestBet(t *testing.T) {
 
 	balAddr0 := testutil.GetAccountBalance(bankKeeper.(bankkeeper.Keeper), ctx, addrs[0], "stake")
 	balAddr1 := testutil.GetAccountBalance(bankKeeper.(bankkeeper.Keeper), ctx, addrs[1], "stake")
+	balPool := testutil.GetModuleBalance(bankKeeper.(bankkeeper.Keeper), accountKeeper, ctx, types.ModuleName, "stake")
 
 	require.Equal(t, math.NewInt(39), balAddr0.Amount)
 	require.Equal(t, math.NewInt(61), balAddr1.Amount)
+	require.Equal(t, math.NewInt(0), balPool.Amount)
 }
 
 func TestCalculatePayoutBetKeepingFeeOnLotteryPool(t *testing.T) {
@@ -143,8 +147,10 @@ func TestCalculatePayoutBetKeepingFeeOnLotteryPool(t *testing.T) {
 	balAddr0 := testutil.GetAccountBalance(bankKeeper.(bankkeeper.Keeper), ctx, addrs[0], "stake")
 	balAddr1 := testutil.GetAccountBalance(bankKeeper.(bankkeeper.Keeper), ctx, addrs[1], "stake")
 	balAddr2 := testutil.GetAccountBalance(bankKeeper.(bankkeeper.Keeper), ctx, addrs[2], "stake")
+	balPool := testutil.GetModuleBalance(bankKeeper.(bankkeeper.Keeper), accountKeeper, ctx, types.ModuleName, "stake")
 
 	require.Equal(t, math.NewInt(39), balAddr0.Amount)
 	require.Equal(t, math.NewInt(84), balAddr1.Amount)
 	require.Equal(t, math.NewInt(24), balAddr2.Amount)
+	require.Equal(t, math.NewInt(3), balPool.Amount)
 }
