@@ -2,7 +2,6 @@ package lottery
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/cosmos/cosmos-sdk/x/lottery/client/cli"
 	"github.com/cosmos/cosmos-sdk/x/lottery/keeper"
 	"github.com/cosmos/cosmos-sdk/x/lottery/types"
@@ -146,14 +145,13 @@ func (am AppModule) EndBlock(ctx sdk.Context, _ abci.RequestEndBlock) []abci.Val
 		return []abci.ValidatorUpdate{}
 	}
 
-	fmt.Println("Drawlottery")
-
-	_, err := am.keeper.DrawLottery(ctx)
+	msgWinner, err := am.keeper.DrawLottery(ctx)
 
 	if err != nil {
-		panic(err)
+		return []abci.ValidatorUpdate{}
 	}
 
+	am.keeper.Payout(ctx, *msgWinner)
 	return []abci.ValidatorUpdate{}
 }
 

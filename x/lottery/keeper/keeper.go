@@ -8,26 +8,29 @@ import (
 	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/lottery/types"
-	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/libs/log"
 )
 
 type Keeper struct {
-	storeKey   storetypes.StoreKey
-	cdc        codec.BinaryCodec
-	authKeeper stakingtypes.AccountKeeper
-	bankKeeper stakingtypes.BankKeeper
+	storeKey      storetypes.StoreKey
+	cdc           codec.BinaryCodec
+	accountKeeper types.AccountKeeper
+	bankKeeper    types.BankKeeper
 }
 
 // NewKeeper creates a new lottery Keeper instance
 func NewKeeper(
 	cdc codec.BinaryCodec,
 	key storetypes.StoreKey,
+	ak types.AccountKeeper,
+	bk types.BankKeeper,
 ) Keeper {
 	return Keeper{
-		storeKey: key,
-		cdc:      cdc,
+		storeKey:      key,
+		cdc:           cdc,
+		accountKeeper: ak,
+		bankKeeper:    bk,
 	}
 }
 
@@ -77,22 +80,54 @@ func (k Keeper) GetCounter(ctx sdk.Context) int64 {
 }
 
 // DrawLottery method to draw lottery and choose the winner of the lottery
-func (k Keeper) DrawLottery(ctx sdk.Context) (sdk.Address, error) {
+func (k Keeper) DrawLottery(ctx sdk.Context) (*types.MsgEnterLottery, error) {
 	msgLotteryList, err := k.getCurrentLottery(ctx)
 
 	if err != nil {
+		k.Logger(ctx).Error(fmt.Sprintf("could not getCurrentLottery: %s", err))
 		return nil, err
 	}
 
-	winnerIndex := chooseWinner(ctx.BlockHeader().DataHash, len(msgLotteryList))
-	winner := msgLotteryList[winnerIndex].Address
-
-	return sdk.AccAddress(winner), nil
+	winnerMsg := k.chooseWinner(ctx, msgLotteryList)
+	return winnerMsg, nil
 }
 
-func chooseWinner(dataHash []byte, numTransactions int) uint16 {
-	hashResult := crypto.Sha256(dataHash)
-	index := (binary.BigEndian.Uint16(hashResult) ^ 0xFFFF) % uint16(numTransactions)
+func (k Keeper) chooseWinner(ctx sdk.Context, msgs types.MsgEnterLotteryList) *types.MsgEnterLottery {
+	var dataHash []byte
 
-	return index
+	for _, msg := range msgs {
+		bmsg, err := msg.Marshal()
+
+		if err != nil {
+			k.Logger(ctx).Error(fmt.Sprintf("some error while Marshal a msg: %s", err))
+			continue
+		}
+
+		dataHash = append(dataHash, bmsg...)
+	}
+
+	hashResult := crypto.Sha256(dataHash)
+	index := (binary.BigEndian.Uint16(hashResult) ^ 0xFFFF) % uint16(len(msgs))
+
+	return msgs[index]
+}
+
+func (k Keeper) Payout(ctx sdk.Context, winner types.MsgEnterLottery) (bool, error) {
+	msgs, _ := k.getCurrentLottery(ctx)
+
+	isPayable, amount := k.calculatePayout(ctx, winner, msgs)
+
+	if isPayable == false {
+		return false, nil
+	}
+
+	coins := sdk.NewCoins(sdk.NewCoin(winner.Bet.Denom, amount))
+
+	if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, winner.GetSigners()[0], coins); err != nil {
+		k.Logger(ctx).Error(fmt.Sprintf("could not send module from Lottery pool to account %s: %s", winner.Address, err))
+
+		return false, err
+	}
+
+	return true, nil
 }

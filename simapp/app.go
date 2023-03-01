@@ -347,7 +347,7 @@ func NewSimApp(
 	app.EvidenceKeeper = *evidenceKeeper
 
 	// Lottery Keeper
-	app.LotteryKeeper = lotterykeeper.NewKeeper(app.appCodec, keys[evidencetypes.StoreKey])
+	app.LotteryKeeper = lotterykeeper.NewKeeper(app.appCodec, keys[evidencetypes.StoreKey], app.AccountKeeper, app.BankKeeper)
 
 	/****  Module Options ****/
 

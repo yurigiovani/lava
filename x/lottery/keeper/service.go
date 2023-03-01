@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"cosmossdk.io/math"
 	"encoding/binary"
 	"fmt"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -81,7 +82,7 @@ func (k Keeper) hasEntryLottery(ctx sdk.Context, address string) bool {
 
 func (k Keeper) incrementCounter(ctx sdk.Context) {
 	counter := k.GetCounter(ctx)
-	k.store(ctx).Set(types.KeyLotteryCounter, []byte{byte(counter)})
+	k.store(ctx).Set(types.KeyLotteryCounter, []byte{byte(counter + 1)})
 }
 
 func (k Keeper) getCurrentLotteryID(ctx sdk.Context) int64 {
@@ -93,4 +94,20 @@ func (k Keeper) getCurrentLotteryID(ctx sdk.Context) int64 {
 	}
 
 	return id
+}
+
+func (k Keeper) calculatePayout(ctx sdk.Context, msg types.MsgEnterLottery, msgs types.MsgEnterLotteryList) (bool, math.Int) {
+	if msgs.IsLowestBet(msg) {
+		fmt.Println("Low")
+		return false, math.NewInt(0)
+	}
+
+	if msgs.IsHighestBet(msg) {
+		fmt.Println("High")
+		return true, math.NewInt(2)
+	}
+
+	fmt.Println("Middle")
+
+	return true, math.NewInt(1)
 }

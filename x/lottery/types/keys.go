@@ -18,11 +18,11 @@ const (
 	// LotteryFee is the fee that will be charged to user
 	LotteryFee = 5
 
-	// MinBet is the minimal value for enter on Lottery
+	// MinBet is the minimum value for enter on Lottery
 	MinBet = 1
 
-	// MinCounter
-	MinCounter = 10
+	// MinCounter is the minimum value for lottery be drawn
+	MinCounter = 0
 )
 
 // GetMinBetLottery is the function that will return the min bet to enter on Lottery
