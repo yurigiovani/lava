@@ -8,6 +8,13 @@ import (
 	gomath "math"
 )
 
+type MsgAmountType string
+
+const (
+	BetType MsgAmountType = "bet"
+	FeeType MsgAmountType = "fee"
+)
+
 // MsgEnterLotteryList collection of MsgEnterLottery
 type MsgEnterLotteryList []*MsgEnterLottery
 
@@ -39,6 +46,23 @@ func (m MsgEnterLotteryList) IsLowestBet(msg MsgEnterLottery) bool {
 	}
 
 	return msg.Bet.Amount.Equal(lowestBet)
+}
+
+// GetTotal method to get the total from bet or fee from list
+func (m MsgEnterLotteryList) GetTotal(from MsgAmountType) math.Int {
+	total := math.NewInt(0)
+
+	for _, msg := range m {
+		value := msg.Bet.Amount
+
+		if from == FeeType {
+			value = msg.Fee.Amount
+		}
+
+		total = total.Add(value)
+	}
+
+	return total
 }
 
 func NewMsgEnterLottery(address string, bet sdk.Coin, fee sdk.Coin) MsgEnterLottery {

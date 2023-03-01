@@ -79,6 +79,10 @@ func (k Keeper) GetCounter(ctx sdk.Context) int64 {
 	return counter
 }
 
+func (k Keeper) ResetCounter(ctx sdk.Context) {
+	k.store(ctx).Set(types.KeyLotteryCounter, []byte{0})
+}
+
 // DrawLottery method to draw lottery and choose the winner of the lottery
 func (k Keeper) DrawLottery(ctx sdk.Context) (*types.MsgEnterLottery, error) {
 	msgLotteryList, err := k.getCurrentLottery(ctx)

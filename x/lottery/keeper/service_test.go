@@ -124,5 +124,49 @@ func TestCalculatePayoutLowestHighestBet(t *testing.T) {
 	require.Nil(t, err)
 	require.True(t, isPayable, "this msg must be paid")
 
-	simapp.CheckBalance(t, app, addrs[1], sdk.NewCoins(sdk.NewCoin("stake", math.NewInt(27))))
+	bal := bankKeeper.GetAllBalances(ctx, addrs[1])
+
+	require.Equal(t, math.NewInt(27), bal[0].Amount)
+}
+
+func TestCalculatePayoutBetKeepingFeeOnLotteryPool(t *testing.T) {
+	app, ctx := createTestApp(t)
+	accountKeeper, bankKeeper := createExpectedKeepers(ctx, app)
+
+	addrs := simapp.AddTestAddrs(app, ctx, 3, math.NewInt(0))
+	msgs := types.MsgEnterLotteryList{}
+
+	msg1 := types.NewMsgEnterLottery(addrs[0].String(), sdk.NewCoin("stake", math.NewInt(10)), sdk.NewCoin("stake", math.NewInt(1)))
+	msg2 := types.NewMsgEnterLottery(addrs[1].String(), sdk.NewCoin("stake", math.NewInt(15)), sdk.NewCoin("stake", math.NewInt(1)))
+	msg3 := types.NewMsgEnterLottery(addrs[2].String(), sdk.NewCoin("stake", math.NewInt(25)), sdk.NewCoin("stake", math.NewInt(1)))
+
+	msgs = append(msgs, &msg1, &msg2, &msg3)
+
+	k := keeper.NewKeeper(nil, app.GetKey(types.StoreKey), accountKeeper, bankKeeper)
+	coinsMint := sdk.NewCoins(sdk.NewCoin("stake", math.NewInt(53)))
+
+	if err := bankKeeper.(bankkeeper.Keeper).MintCoins(ctx, minttypes.ModuleName, coinsMint); err != nil {
+		panic(fmt.Sprintf("some error while minting coins: %s", err))
+	}
+
+	if err := bankKeeper.(bankkeeper.Keeper).SendCoinsFromModuleToModule(ctx, minttypes.ModuleName, types.ModuleName, coinsMint); err != nil {
+		panic(fmt.Sprintf("some error while sending coins from module lottery: %s", err))
+	}
+
+	err1 := k.EnterLottery(ctx, msgs[0])
+	err2 := k.EnterLottery(ctx, msgs[1])
+	err3 := k.EnterLottery(ctx, msgs[2])
+
+	require.Nil(t, err1)
+	require.Nil(t, err2)
+	require.Nil(t, err3)
+
+	isPayable, err := k.Payout(ctx, *msgs[1])
+
+	require.Nil(t, err)
+	require.True(t, isPayable, "this msg must be paid")
+
+	bal := bankKeeper.GetAllBalances(ctx, addrs[1])
+
+	require.Equal(t, math.NewInt(50), bal[0].Amount)
 }

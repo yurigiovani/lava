@@ -98,16 +98,12 @@ func (k Keeper) getCurrentLotteryID(ctx sdk.Context) int64 {
 
 func (k Keeper) calculatePayout(ctx sdk.Context, msg types.MsgEnterLottery, msgs types.MsgEnterLotteryList) (bool, math.Int) {
 	if msgs.IsLowestBet(msg) {
-		fmt.Println("Low")
 		return false, math.NewInt(0)
 	}
 
 	if msgs.IsHighestBet(msg) {
-		fmt.Println("High")
-		return true, math.NewInt(2)
+		return true, msgs.GetTotal(types.BetType).Add(msgs.GetTotal(types.FeeType))
 	}
 
-	fmt.Println("Middle")
-
-	return true, math.NewInt(1)
+	return true, msgs.GetTotal(types.BetType)
 }
