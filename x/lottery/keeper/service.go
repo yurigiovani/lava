@@ -2,7 +2,6 @@ package keeper
 
 import (
 	"cosmossdk.io/math"
-	"encoding/binary"
 	"fmt"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/lottery/types"
@@ -121,7 +120,7 @@ func (k Keeper) getCurrentLotteryID(ctx sdk.Context) int64 {
 	var id int64 = 1
 
 	if bid != nil {
-		id = int64(binary.BigEndian.Uint64(bid))
+		id = int64(bid[0])
 	}
 
 	return id

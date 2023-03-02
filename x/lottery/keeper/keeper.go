@@ -96,7 +96,7 @@ func (k Keeper) GetCounter(ctx sdk.Context) int64 {
 
 // CloseCurrentLottery method to close current lottery and start it again
 func (k Keeper) CloseCurrentLottery(ctx sdk.Context) {
-	k.incrementCounter(ctx)
+	k.resetCounter(ctx)
 	k.incrementLotteryID(ctx)
 }
 

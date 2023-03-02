@@ -88,12 +88,6 @@ func (m MsgEnterLottery) ValidateBasic() error {
 		return sdkerrors.Wrap(sdkerrors.ErrInvalidCoins, fmt.Sprintf("bet must be less than or equal %d", MaxBet))
 	}
 
-	minBet := sdk.NewCoin("stake", math.NewInt(GetMinBetLottery()))
-
-	if m.Bet.IsLT(minBet) {
-		return sdkerrors.Wrap(sdkerrors.ErrInvalidCoins, fmt.Sprintf("bet must be greater than %d", GetMinBetLottery()))
-	}
-
 	return nil
 }
 

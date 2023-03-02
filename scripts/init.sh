@@ -66,3 +66,6 @@ simd collect-gentxs
 
 # Run this to ensure everything worked and that the genesis file is setup correctly
 simd validate-genesis
+
+# start node
+simd start
