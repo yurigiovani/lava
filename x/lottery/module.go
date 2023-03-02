@@ -139,7 +139,9 @@ func (am AppModule) BeginBlock(ctx sdk.Context, _ abci.RequestBeginBlock) {
 // EndBlock returns the end blocker for the staking module. It returns no validator
 // updates.
 func (am AppModule) EndBlock(ctx sdk.Context, _ abci.RequestEndBlock) []abci.ValidatorUpdate {
-	if am.keeper.GetCounter(ctx) < types.MinCounter {
+	counter := am.keeper.GetCounter(ctx)
+
+	if counter < types.MinCounter {
 		return []abci.ValidatorUpdate{}
 	}
 
@@ -155,7 +157,7 @@ func (am AppModule) EndBlock(ctx sdk.Context, _ abci.RequestEndBlock) []abci.Val
 
 	am.keeper.CloseCurrentLottery(ctx)
 
-	am.keeper.Logger(ctx).Info("a new lottery's turn will start again")
+	am.keeper.Logger(ctx).With("winner", msgWinner.Address).With("participants", counter).Info("a new lottery's turn will start again")
 
 	return []abci.ValidatorUpdate{}
 }
