@@ -27,6 +27,9 @@ simd tendermint show-validator
 
 simd add-genesis-account $MY_VALIDATOR_ADDRESS 1000000000000000stake --keyring-backend $KEYRING
 
+# setting timeout_commit to 5 minutes
+sed -i 's/timeout_commit = "5s"/timeout_commit = "300s"/' $HOME/.simapp/config/config.toml
+
 simd gentx $KEY 100000000stake --keyring-backend $KEYRING --chain-id $CHAINID --gas=0stake
 
 simd collect-gentxs

@@ -25,7 +25,7 @@ const (
 	MinBet = 1
 
 	// MinCounter is the minimum value for lottery be drawn
-	MinCounter = 0
+	MinCounter = 10
 )
 
 // GetMinBetLottery is the function that will return the min bet to enter on Lottery
